@@ -191,9 +191,9 @@ class PFMmetric(Metric):
                     affinities = normalize(affinities, bg_affinities)
                 barcounter.next()
 
-                # if counter > 4:
-                #     break
-                # counter += 1
+                if counter > 4:
+                    break
+                counter += 1
 
                 results.append(affinities)
         self.affinities = np.vstack(results).T
@@ -281,9 +281,9 @@ class ProBoundMetric(Metric):
                     affinities = normalize(affinities, bg_affinities)
                 barcounter.next()
 
-                # if counter > 4:
-                #     break
-                # counter += 1
+                if counter > 4:
+                    break
+                counter += 1
 
                 results.append(np.array(affinities))
 

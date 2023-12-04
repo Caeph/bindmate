@@ -1,3 +1,4 @@
+import os
 import time
 
 import numpy as np
@@ -41,20 +42,6 @@ def __calculate_all_to_all_metric(kmer_combinations, unique_kmers, metric, cpus)
         return metric.compare_kmers(i1, i2)
 
     metric_values = np.apply_along_axis(calculate, 0, kmer_combinations)
-    # metric_values = parallel_apply_along_axis(calculate, 1, kmer_combinations)
-    # chunks = np.array_split(kmer_combinations, cpus)
-    #
-    # def calculate(r):
-    #     i1, i2 = r
-    #     return metric.compare_kmers(unique_kmers[i1], unique_kmers[i2])
-    #
-    # def do_chunk(chunk):
-    #     return np.apply_along_axis(calculate, 1, chunk)
-    #
-    # with parallel_config(backend='threading', n_jobs=cpus):
-    #     metric_chunks = Parallel()(
-    #              delayed(do_chunk)(chunk) for chunk in chunks)
-    # return np.hstack(metric_chunks)
     return metric_values
 
 
@@ -118,12 +105,14 @@ def __preselect(probas_0, probas_1, part):
 
 class PairingResults:
     def __init__(self, unique_kmers, kmer_combinations, probas_1, probas_0, mapped_kmers):
-        self.unique_kmers = unique_kmers
+        self.unique_kmers = unique_kmers  # numpy array
         self.available_combinations = pd.DataFrame(kmer_combinations, columns=["kmer_i1", "kmer_i2"]
-                                                   ).reset_index().rename(columns={"index" : "combination_index"})  # indexes
-        self.probas_1 = probas_1
-        self.probas_0 = probas_0
-        self.mapped_kmers_df = mapped_kmers[["input_sequence_index", "kmer_index"]]
+                                                   ).reset_index().rename(
+            columns={"index": "combination_index"})  # indexes, pandas df
+        self.probas_1 = probas_1  # np array
+        self.probas_0 = probas_0  # np array
+        self.mapped_kmers_df = mapped_kmers[["input_sequence_index", "kmer_index"]]  # pandas df
+        ...
 
     def calculate_for_seq_index_pair(self, seqi1, seqi2):
         seqi1_df = self.mapped_kmers_df[self.mapped_kmers_df['input_sequence_index'] == seqi1]
@@ -131,12 +120,35 @@ class PairingResults:
 
         cross_df = pd.merge(seqi1_df, seqi2_df, how='cross', suffixes=("_1", "_2"))
         pairs = pd.merge(cross_df, self.available_combinations,
-                     left_on=['kmer_index_1', "kmer_index_2"], right_on=["kmer_i1", "kmer_i2"],
+                         left_on=['kmer_index_1', "kmer_index_2"], right_on=["kmer_i1", "kmer_i2"],
                          how="inner").drop(
-                     columns=["kmer_i1", "kmer_i2"])
+            columns=["kmer_i1", "kmer_i2"])
 
         pairs['probability'] = pairs['combination_index'].apply(lambda i: self.probas_1[i])
         return pairs
+
+    def save(self, path):
+        os.makedirs(path, exist_ok=True)
+        self.available_combinations.to_csv(os.path.join(path, "available_combinations.csv.gz"),
+                                           index=False)
+        self.mapped_kmers_df.to_csv(os.path.join(path, "mapped_kmers_df.csv.gz"),
+                                    index=False)
+        for array, core_filename in zip(
+                [self.probas_1, self.probas_0],
+                ["probas_1", "probas_0"]
+        ):
+            np.save(os.path.join(path, core_filename + ".npy"), array)
+
+        np.savetxt(os.path.join(path, "unique_kmers.txt"), self.unique_kmers,  fmt="%s")
+
+    @staticmethod
+    def load(path):
+        unique_kmers = np.loadtxt(os.path.join(path, "unique_kmers.txt"), dtype=str)
+        kmer_combinations = pd.read_csv(os.path.join(path, "available_combinations.csv.gz"))
+        probas_1 = np.load(os.path.join(path, "probas_1.npy"))
+        probas_0 = np.load(os.path.join(path, "probas_0.npy"))
+        mapped_kmers = pd.read_csv(os.path.join(path, "mapped_kmers_df.csv.gz"))
+        return PairingResults(unique_kmers, kmer_combinations, probas_1, probas_0, mapped_kmers)
 
 
 def __calculate_kmer_to_kmer_matchscores(unique_kmers, kmers_mapped_to_sqs,
@@ -230,19 +242,21 @@ def calculate_kmer_to_kmer_matchscores(inputdf, k, metrics,
     return pairwise_scoring_results
 
 
-# to comment out once development is done
-import input_loading
-
-# sqdf = input_loading.load_fasta_input("../../noblurr_human_genome_sample_bigger.fasta")
-# sqdf = input_loading.load_fasta_input("../../noblurr_balanced_human_genome.fasta")
-sqdf = input_loading.load_fasta_input("../../small_unbalanced_test_dataset_randombg.fasta")
-# sqdf = input_loading.load_fasta_input("../../fake_sequence_less_blurred_0_10_250_100_100.fasta")
-
-metrics = [
-    "lcs",
-    "hoco_iou",
-    "probound_mse_human"
-]
-
-results = calculate_kmer_to_kmer_matchscores(sqdf, 24, metrics)
-results.calculate_for_seq_index_pair(1,0)
+# # to comment out once development is done
+# import input_loading
+#
+# # sqdf = input_loading.load_fasta_input("../../noblurr_human_genome_sample_bigger.fasta")
+# # sqdf = input_loading.load_fasta_input("../../noblurr_balanced_human_genome.fasta")
+# sqdf = input_loading.load_fasta_input("../../small_unbalanced_test_dataset_randombg.fasta")
+# # sqdf = input_loading.load_fasta_input("../../fake_sequence_less_blurred_0_10_250_100_100.fasta")
+#
+# metrics = [
+#     "lcs",
+#     "hoco_iou",
+#     "probound_mse_human"
+# ]
+#
+# results = calculate_kmer_to_kmer_matchscores(sqdf, 24, metrics)
+# results.save("../../kmer_pairing_result_test")
+#
+# results = PairingResults.load("../../kmer_pairing_result_test")
