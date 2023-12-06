@@ -31,3 +31,14 @@ class SeqToSeqPairing:
         self.pairing = pairing
         self.len = len_pairing
         self.pairing_cost = pairing_cost
+
+    def to_string(self):
+        paired_identifiers = ",".join([f"{x}--{y}" for x,y in self.pairing])
+        desc = f"{self.pairing_cost};{self.len};{paired_identifiers}"
+        return desc
+
+    @staticmethod
+    def load(desc_string):
+        pairing_cost, length, paired = desc_string.split(";")
+        pairing_cost = float(pairing_cost)
+        length = int(length)

@@ -1,15 +1,14 @@
+import multiprocessing
 from difflib import SequenceMatcher
 import numpy as np
-import pyProBound
-from scipy import stats
-import os
-import Bio.motifs as bmotifs
 from scipy.optimize import minimize_scalar
+from scipy import stats
 from Bio.Seq import Seq
+import Bio.motifs as bmotifs
+import pyProBound
+from tqdm import tqdm
 
-# from progress.bar import IncrementalBar as bar
-
-bases = list("ACGT")
+from multiprocessing import Pool
 
 
 def normalize(affinities, bg_affinities):
@@ -17,11 +16,11 @@ def normalize(affinities, bg_affinities):
     return (affinities - loc) / scale
 
 
-def score(sq, motif_database, motif):
-    if motif_database[motif].length > len(sq):
+def score(sq, pssm):
+    if pssm.length > len(sq):
         return np.nan
-    return np.fmax(motif_database[motif].calculate(Seq(sq)).max(),
-                   motif_database[motif].reverse_complement().calculate(Seq(sq)).max())
+    return np.fmax(pssm.calculate(Seq(sq)).max(),
+                   pssm.reverse_complement().calculate(Seq(sq)).max())
 
 
 ##### functions for EM optimization
@@ -69,20 +68,6 @@ distributions = {
 }
 
 
-##### background creation
-def create_background(k, background_type, bg_size, **kwargs):
-    if background_type == "random":
-        bgkmers = np.array(["".join(np.random.choice(bases, size=k)) for _ in range(bg_size)])
-    elif background_type == "sampled":
-        # TODO, input file is in **kwargs
-        raise NotImplementedError("No other background type is implemented.")
-    else:
-        raise NotImplementedError("No other background type is implemented.")
-
-    return bgkmers
-
-
-##### metric objects definition
 class Metric:
     def __init__(self, name, metric_type, description
                  ):
@@ -175,19 +160,16 @@ class PFMmetric(Metric):
         results = []
 
         counter = 0
-        for motif in pfm_database:
+
+        for motif in tqdm(pfm_database):
             def score_motif(kmer):
-                return score(kmer, pfm_database, motif)
+                return score(kmer, pfm_database[motif])
 
             vectorized_func = np.vectorize(score_motif)
             affinities = vectorized_func(unique_kmers)
             if self.bg_kmers is not None:
                 bg_affinities = vectorized_func(self.bg_kmers)
                 affinities = normalize(affinities, bg_affinities)
-
-            # if counter > 4:
-            #     break
-            # counter += 1
 
             results.append(affinities)
         self.affinities = np.vstack(results).T
@@ -242,7 +224,6 @@ class ProBoundMetric(Metric):
     def filter_db(self, models, names):
         mask = names.isin(self.selected_motifs)
         return models[mask], names[mask]
-
 
     def initialize(self, unique_kmers):
         mc = pyProBound.MotifCentral()

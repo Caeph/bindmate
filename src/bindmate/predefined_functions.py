@@ -1,6 +1,9 @@
 # TODO
-from kmer.kmer_comparison_functions import *
 from pathlib import Path
+import os
+from backgrounds.backgrounds import create_background
+
+from kmer.kmer_comparison_functions import *
 
 script_path = Path(__file__).absolute()
 script_dir = os.path.split(script_path)[0]

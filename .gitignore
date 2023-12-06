@@ -1,4 +1,9 @@
-*.fasta # test input
+*.fasta
+# test input
+*.log
+
+# stuff
+test_results_match_probabilities
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

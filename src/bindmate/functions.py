@@ -1,25 +1,17 @@
 # imports here
-from predefined_functions import predefined_functions as __predefined_functions
-from kmer_to_kmer_matchscores import calculate_kmer_to_kmer_matchscores
+from kmer_to_kmer_matchscores import calculate_kmer_to_kmer_matchscores, PairingResults
 import input_loading
-from pairing_graph import bipartite_graph_toolbox as bgt
-
-
-#TODO THIS IS A PLANNED FUNCTIONALITY
-
-# optim info -- dictionary
-# { 
-#       probability_func(value, parameters),
-#       argmax_func(q, x)
-# }
+import os
+from seq_to_seq_matchscores import *
 
 
 class PairingProbabilityCalculator:
-    def __init__(self, k, metrics):
+    def __init__(self, k, metrics, material_saving_dir):
         # set up kmer similarity functions
         # set up preselection no
         self.k = k
         self.metrics = metrics
+        self.material_saving_dir = material_saving_dir
 
     def add_user_defined_metric(self, function):
         # todo fill out missing stuff
@@ -38,27 +30,38 @@ class PairingProbabilityCalculator:
         similarities = self.fit(sequence_df)
         return similarities
 
-    def fit(self, sequences):
-        # create a list of unique kmers
-        # calculate kmer similarity/distance functions
-        # calculate match probabilities
-        # preselection filtering
-        # best pairing in sequences
+    def fit(self, sequences, to_file=None):
 
         # return fit_result
-        optimized = calculate_kmer_to_kmer_matchscores(sequences, self.k, self.metrics)
+        optimized = calculate_kmer_to_kmer_matchscores(sequences, self.k, self.metrics,
+                                                       save_results=os.path.join(
+                                                           self.material_saving_dir, "metric_ranks.csv"
+                                                       ))
         # save stuff
-        return optimized
+        optimized.save(self.material_saving_dir)
+        seq2seq = calculate_seq_to_seq_similarities(optimized)
+        if to_file:
+            with open(os.path.join(self.material_saving_dir, "seq2seq_results.csv"),
+                      mode='w') as writer:
+                for item in seq2seq:
+                    print(item.to_string(), file=writer)
+        return seq2seq
 
-    def analyze(self, fit_result):
-        ...
 
+class AnalyticalTool:
+    def __init__(self, pairing_result, seq2seq_result, info_ranks):
+        self.pairing_result = pairing_result
+        self.seq2seq = seq2seq_result
+        self.info_ranks = info_ranks
 
-# TODO analytic tools
-def supervised_analytics(metric, matching_pairs, mismatched_pairs):
-    ...
+    @staticmethod
+    def load(dirname):
+        pairing_result = PairingResults.load(dirname)
+        seq2seq = []
+        for line in open(os.path.join(dirname, "seq2seq_results.csv")):
+            line = line.strip("\n")
+            item = SeqToSeqPairing.load(line)
+            seq2seq.append(item)
 
-
-# TODO viewing methods for fitted and analysed stuff
-def view():
-    ...
+        info_ranks = pd.read_csv(os.path.join(dirname, "metric_ranks.csv"))
+        return AnalyticalTool(pairing_result, seq2seq, info_ranks)
