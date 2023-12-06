@@ -6,11 +6,8 @@ import os
 import Bio.motifs as bmotifs
 from scipy.optimize import minimize_scalar
 from Bio.Seq import Seq
-from io import StringIO
-import sys
-from contextlib import redirect_stdout, redirect_stderr
 
-from progress.bar import IncrementalBar as bar
+# from progress.bar import IncrementalBar as bar
 
 bases = list("ACGT")
 
@@ -178,24 +175,21 @@ class PFMmetric(Metric):
         results = []
 
         counter = 0
-        with bar(f"Initializing TF affinities for {self.name}",
-                 max=len(pfm_database)) as barcounter:
-            for motif in pfm_database:
-                def score_motif(kmer):
-                    return score(kmer, pfm_database, motif)
+        for motif in pfm_database:
+            def score_motif(kmer):
+                return score(kmer, pfm_database, motif)
 
-                vectorized_func = np.vectorize(score_motif)
-                affinities = vectorized_func(unique_kmers)
-                if self.bg_kmers is not None:
-                    bg_affinities = vectorized_func(self.bg_kmers)
-                    affinities = normalize(affinities, bg_affinities)
-                barcounter.next()
+            vectorized_func = np.vectorize(score_motif)
+            affinities = vectorized_func(unique_kmers)
+            if self.bg_kmers is not None:
+                bg_affinities = vectorized_func(self.bg_kmers)
+                affinities = normalize(affinities, bg_affinities)
 
-                if counter > 4:
-                    break
-                counter += 1
+            # if counter > 4:
+            #     break
+            # counter += 1
 
-                results.append(affinities)
+            results.append(affinities)
         self.affinities = np.vstack(results).T
 
 
@@ -249,6 +243,7 @@ class ProBoundMetric(Metric):
         mask = names.isin(self.selected_motifs)
         return models[mask], names[mask]
 
+
     def initialize(self, unique_kmers):
         mc = pyProBound.MotifCentral()
         if self.taxa is not None:
@@ -267,25 +262,22 @@ class ProBoundMetric(Metric):
         results = []
         counter = 0
 
-        with bar(f"Initializing TF affinities for {self.name}",
-                 max=len(models)) as barcounter:
-            for model_id, name in zip(models, names):
-                # TODO reroute everything this is printing, somehow...
-                model = pyProBound.ProBoundModel(int(model_id), motifcentral=True)
+        for model_id, name in zip(models, names):
+            # TODO reroute everything this is printing, somehow...
+            model = pyProBound.ProBoundModel(int(model_id), motifcentral=True)
 
-                model.select_binding_mode(0)  # in the motif central models there is usually only one
+            model.select_binding_mode(0)  # in the motif central models there is usually only one
 
-                affinities = model.score_affinity_sum(simplified_kmers)
-                if self.bg_kmers is not None:
-                    bg_affinities = model.score_affinity_sum(self.bg_kmers)
-                    affinities = normalize(affinities, bg_affinities)
-                barcounter.next()
+            affinities = model.score_affinity_sum(simplified_kmers)
+            if self.bg_kmers is not None:
+                bg_affinities = model.score_affinity_sum(self.bg_kmers)
+                affinities = normalize(affinities, bg_affinities)
 
-                if counter > 4:
-                    break
-                counter += 1
+            # if counter > 4:
+            #     break
+            # counter += 1
 
-                results.append(np.array(affinities))
+            results.append(np.array(affinities))
 
         self.affinities = np.vstack(results)
 

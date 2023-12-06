@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-import swifter
 
 
 class ProbabilityModel: 
@@ -23,8 +22,13 @@ class ProbabilityModel:
             param = self.parameters[i]
             x = pd.Series(observed_values[:, i])
             p = np.log(
-                x.swifter.progress_bar(False).apply(lambda xi: p_func(xi, param) + pseudocount)
-            )
+                x.swifter.apply(lambda xi: p_func(xi, param) + pseudocount)
+            )  # considerably faster -- uses dask
+
+            # p = np.log(
+            #     np.vectorize(lambda xi: p_func(xi, param) + pseudocount)(x)
+            # )
+
             result = result + p
             if type(result) is pd.Series:
                 result = result.values
@@ -105,7 +109,6 @@ class EMOptimizer:
         return True
 
     def optimize(self, observed_values, max_step, tolerance):
-        # TODO reasonable parameter recording
         old_parameters = [self.models[z].parameters for z in self.z]
         old_parameters.extend([self.priors[z] for z in self.z])
 
@@ -129,9 +132,7 @@ class EMOptimizer:
                 print("CONVERGENCE")
                 break
 
-            print()
-
             # recorded_parameters.append(old_parameters)
             old_parameters = new_parameters
 
-        return self.models # recorded_parameters
+        return self.models  # recorded_parameters
