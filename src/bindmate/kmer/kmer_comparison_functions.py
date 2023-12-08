@@ -290,3 +290,5 @@ class ProBoundHumanMSE(ProBoundMetric):
         one, two = self.affinities[i1, :], self.affinities[i2, :]
         diff = (one - two)
         return np.mean(diff * diff)
+
+

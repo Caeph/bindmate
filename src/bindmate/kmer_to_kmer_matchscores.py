@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 from kmer.make_kmers import *
-from predefined_functions import predefined_functions
+from predefined_functions import initialize_available_functions
 from itertools import combinations
 from joblib import Parallel, delayed, parallel_config, cpu_count
 from em_algorithm.optimization import *
@@ -172,7 +172,7 @@ class PairingResults:
 
 
 def __calculate_kmer_to_kmer_matchscores(unique_kmers, kmers_mapped_to_sqs,
-                                         full_metrics, cpus, save_results, preselection_part):
+                                         full_metrics, cpus, save_results, preselection_part, max_em_step):
     start = time.time()
 
     # calculation of metric ranks
@@ -214,7 +214,7 @@ def __calculate_kmer_to_kmer_matchscores(unique_kmers, kmers_mapped_to_sqs,
 
     # em algo for score calculation
     print("Starting optimization...")
-    probas_0, probas_1 = __optimize(pairwise_ranks, full_metrics)
+    probas_0, probas_1 = __optimize(pairwise_ranks, full_metrics, max_step=max_em_step)
     print(f"Probabilities calculated, optimization complete: {time.time() - start}")
     start = time.time()
 
@@ -237,15 +237,18 @@ def __calculate_kmer_to_kmer_matchscores(unique_kmers, kmers_mapped_to_sqs,
     return results
 
 
-def calculate_kmer_to_kmer_matchscores(inputdf, k, metrics,
-                                       cpus=-1,
+def calculate_kmer_to_kmer_matchscores(inputdf, k, metrics, background_info,
+                                       cpus=-1, max_em_step=20,
                                        save_results='../../test_results_match_probabilities/test_store.csv', preselection_part=0.5):
     # curate the metrics
     if cpus == -1:
         cpus = cpu_count()
 
+    predefined_functions = initialize_available_functions(
+        k, *background_info
+    )
+
     # read input kmers
-    print(f"Calculating on {cpus} CPUs.")
     unique_kmers, kmers_mapped_to_sqs = __read_unique_kmers(inputdf, k)
 
     full_metrics = []
@@ -264,5 +267,5 @@ def calculate_kmer_to_kmer_matchscores(inputdf, k, metrics,
 
     # do the work
     pairwise_scoring_results = __calculate_kmer_to_kmer_matchscores(
-        unique_kmers, kmers_mapped_to_sqs, full_metrics, cpus, save_results, preselection_part)
+        unique_kmers, kmers_mapped_to_sqs, full_metrics, cpus, save_results, preselection_part, max_em_step)
     return pairwise_scoring_results

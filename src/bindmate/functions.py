@@ -6,26 +6,42 @@ from seq_to_seq_matchscores import *
 
 
 class PairingProbabilityCalculator:
-    def __init__(self, k, metrics, material_saving_dir):
+    def __init__(self, k, metrics, material_saving_dir,
+                 background_type=None, background_size=None, **bgkwargs):
         # set up kmer similarity functions
         # set up preselection no
         self.k = k
         self.metrics = metrics
         self.material_saving_dir = material_saving_dir
+        self.background = [background_type, background_size, bgkwargs]
 
     def add_user_defined_metric(self, function):
         # todo fill out missing stuff
         ...
 
+    def __write_descriptions(self, input):
+        os.makedirs(self.material_saving_dir, exist_ok=True)
+        descriptions = [
+            (self.k, "k"),
+            (self.background, "background"),
+            (self.metrics, "metrics"),
+            (input, "input")
+        ]
+        with open(os.path.join(self.material_saving_dir, "readme.txt"), mode='w') as writer:
+            for value, desc in descriptions:
+                print(f"{desc}: {value}", file=writer)
+
     def fit_predict_fasta(self, fasta_filename):
         # read fasta and prep input
         # analyze
+        self.__write_descriptions(fasta_filename)
         sequence_df = input_loading.load_fasta_input(fasta_filename)
         return self.fit(sequence_df)
 
     def fit_predict_bed(self, bed_filename, source_fasta):
         # read bed and prep input
         # analyze
+        self.__write_descriptions([bed_filename, source_fasta])
         sequence_df = input_loading.load_bed_input(bed_filename, source_fasta)
         similarities = self.fit(sequence_df)
         return similarities
@@ -34,9 +50,11 @@ class PairingProbabilityCalculator:
 
         # return fit_result
         optimized = calculate_kmer_to_kmer_matchscores(sequences, self.k, self.metrics,
+                                                       self.background,
                                                        save_results=os.path.join(
-                                                           self.material_saving_dir, "metric_ranks.csv"
-                                                       ))
+                                                        self.material_saving_dir, "metric_ranks.csv"
+                                                       )
+                                                       )
         # save stuff
         optimized.save(self.material_saving_dir)
         seq2seq = calculate_seq_to_seq_similarities(optimized)
