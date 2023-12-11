@@ -9,17 +9,14 @@ def main():
     out = "../../test_results_match_probabilities"
     tool = PairingProbabilityCalculator(24, [
                                 "lcs",
-                                "hoco_iou",
+                                # "hoco_iou_human_full",
+                                "hoco_iou_human_basic_domains",
                                 "probound_mse_human"
                             ], out, background_type="sampled", background_size=1500,
                                         background_source_file='backgrounds/upstream2000.fa')
     similarities = tool.fit_predict_fasta(inputfile)  # seq to seq
 
     # optimized = PairingResults.load(out)
-
-
-
-
 
 
 if __name__ == '__main__':

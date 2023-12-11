@@ -1,4 +1,3 @@
-import multiprocessing
 from difflib import SequenceMatcher
 import numpy as np
 from scipy.optimize import minimize_scalar
@@ -7,8 +6,9 @@ from Bio.Seq import Seq
 import Bio.motifs as bmotifs
 import pyProBound
 from tqdm import tqdm
+import os
 
-from multiprocessing import Pool
+script_dir = os.path.split(os.path.realpath(__file__))[0]
 
 
 def normalize(affinities, bg_affinities):
@@ -176,12 +176,13 @@ class PFMmetric(Metric):
 
 
 class HocomocoIOU(PFMmetric):
-    def __init__(self, binding_matrix_file, binder_threshold, bg_kmers=None):
+    def __init__(self, binding_matrix_file, binder_threshold, bg_kmers=None, selected_motifs=None):
         super().__init__(
             "hocomoco_iou",
             "similarity",
             "Intersection over union ratio between possible binders.q", binding_matrix_file,
-            bg_kmers=bg_kmers
+            bg_kmers=bg_kmers,
+            selected_motifs=selected_motifs
         )
         self.binder_threshold = binder_threshold
         # TODO optim params setting
@@ -243,9 +244,9 @@ class ProBoundMetric(Metric):
         results = []
         counter = 0
 
-        for model_id, name in zip(models, names):
-            # TODO reroute everything this is printing, somehow...
-            model = pyProBound.ProBoundModel(int(model_id), motifcentral=True)
+        for model_id, name in tqdm(list(zip(models, names))):
+            model_file = os.path.join(script_dir, "sources_for_motif_based_scoring", "probound", f"{model_id}.json")
+            model = pyProBound.ProBoundModel(model_file, fitjson=True)
 
             model.select_binding_mode(0)  # in the motif central models there is usually only one
 
@@ -290,5 +291,4 @@ class ProBoundHumanMSE(ProBoundMetric):
         one, two = self.affinities[i1, :], self.affinities[i2, :]
         diff = (one - two)
         return np.mean(diff * diff)
-
 
