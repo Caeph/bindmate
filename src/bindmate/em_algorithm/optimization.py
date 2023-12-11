@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 
-class ProbabilityModel: 
+class ProbabilityModel:
     def __init__(self, z, metrics):
         self.identificator = z
         optim_info = [x.get_optimalization_info(z) for x in metrics]
@@ -43,7 +43,7 @@ class ProbabilityModel:
             new_parameters.append(new_theta)
 
         return new_parameters
-    
+
 
 class EMOptimizer:
     # https://courses.csail.mit.edu/6.867/wiki/images/b/b5/Em_tutorial.pdf
@@ -84,13 +84,26 @@ class EMOptimizer:
 
         return new_priors, new_theta
 
+    def __record(self, parameters, colector, sep=';', subsep=';'):
+        if colector is None:
+            return
+        unmatched, matched, prior0, prior1 = parameters
+
+        def flatten_to_string(l):
+            flat_list = [str(item) for sublist in l for item in sublist]
+            return np.array(flat_list)
+
+        unmatched = subsep.join(flatten_to_string(unmatched))
+        matched = subsep.join(flatten_to_string(matched))
+        print(sep.join([unmatched, matched, str(prior0), str(prior1)]), file=colector)
+
     def check_convergence(self, old_parameters, new_parameters, tol):
         new_unmatched, new_matched, new_prior0, new_prior1 = new_parameters
         old_unmatched, old_matched, old_prior0, old_prior1 = old_parameters
 
         # compare priors
         for o, n in zip([old_prior0, old_prior1], [new_prior0, new_prior1]):
-            if np.abs(o-n) > tol:
+            if np.abs(o - n) > tol:
                 return False
 
         def flatten(l):
@@ -108,9 +121,10 @@ class EMOptimizer:
 
         return True
 
-    def optimize(self, observed_values, max_step, tolerance):
+    def optimize(self, observed_values, max_step, tolerance, parameter_colector=None):
         old_parameters = [self.models[z].parameters for z in self.z]
         old_parameters.extend([self.priors[z] for z in self.z])
+        self.__record(old_parameters, colector=parameter_colector)
 
         for i in range(max_step):
             qs = self.__e_step(observed_values)
@@ -133,6 +147,7 @@ class EMOptimizer:
                 break
 
             # recorded_parameters.append(old_parameters)
+            self.__record(new_parameters, colector=parameter_colector)
             old_parameters = new_parameters
 
         return self.models  # recorded_parameters

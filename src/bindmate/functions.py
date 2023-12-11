@@ -53,6 +53,8 @@ class PairingProbabilityCalculator:
                                                        self.background,
                                                        save_results=os.path.join(
                                                         self.material_saving_dir, "metric_ranks.csv"
+                                                       ), em_params_file=os.path.join(
+                                                        self.material_saving_dir, "recorded_parameters.csv"
                                                        )
                                                        )
         # save stuff

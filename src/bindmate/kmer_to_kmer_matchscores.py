@@ -75,7 +75,7 @@ def __get_kmer_combinations(unique_kmers):
     return np.array(np.meshgrid(indices, indices))
 
 
-def __optimize(all_ranks, full_metrics, priors=None, max_step=10, tolerance=0.0001):
+def __optimize(all_ranks, full_metrics, priors=None, max_step=10, tolerance=0.0001, em_params_file=None):
     print()
     matched = ProbabilityModel(1, full_metrics)
     unmatched = ProbabilityModel(0, full_metrics)
@@ -89,10 +89,15 @@ def __optimize(all_ranks, full_metrics, priors=None, max_step=10, tolerance=0.00
         models={0: unmatched, 1: matched}
     )
     print("Initialization complete...")
-    models = em_algo.optimize(all_ranks, max_step, tolerance)
+    if em_params_file is None:
+        models = em_algo.optimize(all_ranks, max_step, tolerance)
+    else:
+        with open(em_params_file, mode='w') as writer:
+            print('unmatched_params,matched_params,prior_0,prior_1', file=writer)
+            models = em_algo.optimize(all_ranks, max_step, tolerance, parameter_colector=writer)
     print("Calculating final probability")
-    probas_0 = unmatched.calculate_probability(all_ranks)
-    probas_1 = matched.calculate_probability(all_ranks)
+    probas_0 = models[0].calculate_probability(all_ranks)
+    probas_1 = models[1].calculate_probability(all_ranks)
     return probas_0, probas_1
 
 
@@ -172,7 +177,8 @@ class PairingResults:
 
 
 def __calculate_kmer_to_kmer_matchscores(unique_kmers, kmers_mapped_to_sqs,
-                                         full_metrics, cpus, save_results, preselection_part, max_em_step):
+                                         full_metrics, cpus, save_results, preselection_part,
+                                         max_em_step, em_params_file):
     start = time.time()
 
     # calculation of metric ranks
@@ -214,7 +220,8 @@ def __calculate_kmer_to_kmer_matchscores(unique_kmers, kmers_mapped_to_sqs,
 
     # em algo for score calculation
     print("Starting optimization...")
-    probas_0, probas_1 = __optimize(pairwise_ranks, full_metrics, max_step=max_em_step)
+    probas_0, probas_1 = __optimize(pairwise_ranks, full_metrics,
+                                    max_step=max_em_step, em_params_file=em_params_file)
     print(f"Probabilities calculated, optimization complete: {time.time() - start}")
     start = time.time()
 
@@ -239,7 +246,8 @@ def __calculate_kmer_to_kmer_matchscores(unique_kmers, kmers_mapped_to_sqs,
 
 def calculate_kmer_to_kmer_matchscores(inputdf, k, metrics, background_info,
                                        cpus=-1, max_em_step=20,
-                                       save_results='../../test_results_match_probabilities/test_store.csv', preselection_part=0.5):
+                                       save_results='../../test_results_match_probabilities/test_store.csv',
+                                       preselection_part=0.5, em_params_file=None):
     # curate the metrics
     if cpus == -1:
         cpus = cpu_count()
@@ -267,5 +275,6 @@ def calculate_kmer_to_kmer_matchscores(inputdf, k, metrics, background_info,
 
     # do the work
     pairwise_scoring_results = __calculate_kmer_to_kmer_matchscores(
-        unique_kmers, kmers_mapped_to_sqs, full_metrics, cpus, save_results, preselection_part, max_em_step)
+        unique_kmers, kmers_mapped_to_sqs, full_metrics, cpus, save_results, preselection_part,
+        max_em_step, em_params_file)
     return pairwise_scoring_results
