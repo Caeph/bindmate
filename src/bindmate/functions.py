@@ -7,6 +7,7 @@ from seq_to_seq_matchscores import *
 
 class PairingProbabilityCalculator:
     def __init__(self, k, metrics, material_saving_dir,
+                 max_em_step=None, preselection_part=0.5,
                  background_type=None, background_size=None, **bgkwargs):
         # set up kmer similarity functions
         # set up preselection no
@@ -14,6 +15,8 @@ class PairingProbabilityCalculator:
         self.metrics = metrics
         self.material_saving_dir = material_saving_dir
         self.background = [background_type, background_size, bgkwargs]
+        self.max_em_step = max_em_step
+        self.preselection_part = preselection_part
 
     def add_user_defined_metric(self, function):
         # todo fill out missing stuff
@@ -36,14 +39,14 @@ class PairingProbabilityCalculator:
         # analyze
         self.__write_descriptions(fasta_filename)
         sequence_df = input_loading.load_fasta_input(fasta_filename)
-        return self.fit(sequence_df)
+        return self.fit(sequence_df, to_file=True)
 
     def fit_predict_bed(self, bed_filename, source_fasta):
         # read bed and prep input
         # analyze
         self.__write_descriptions([bed_filename, source_fasta])
         sequence_df = input_loading.load_bed_input(bed_filename, source_fasta)
-        similarities = self.fit(sequence_df)
+        similarities = self.fit(sequence_df, to_file=True)
         return similarities
 
     def fit(self, sequences, to_file=None):
@@ -55,7 +58,9 @@ class PairingProbabilityCalculator:
                                                         self.material_saving_dir, "metric_ranks.csv"
                                                        ), em_params_file=os.path.join(
                                                         self.material_saving_dir, "recorded_parameters.csv"
-                                                       )
+                                                       ),
+                                                       max_em_step=self.max_em_step,
+                                                       preselection_part=self.preselection_part
                                                        )
         # save stuff
         optimized.save(self.material_saving_dir)
