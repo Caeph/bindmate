@@ -21,13 +21,13 @@ class ProbabilityModel:
             p_func = self.optimization_info[i]['proba']
             param = self.parameters[i]
             x = pd.Series(observed_values[:, i])
-            p = np.log(
-                x.swifter.apply(lambda xi: p_func(xi, param) + pseudocount)
-            )  # considerably faster -- uses dask
-
             # p = np.log(
-            #     np.vectorize(lambda xi: p_func(xi, param) + pseudocount)(x)
-            # )
+            #     x.swifter.apply(lambda xi: p_func(xi, param) + pseudocount)
+            # )  # considerably faster -- uses dask
+
+            p = np.log(
+                np.vectorize(lambda xi: p_func(xi, param) + pseudocount)(x)
+            )
 
             result = result + p
             if type(result) is pd.Series:
