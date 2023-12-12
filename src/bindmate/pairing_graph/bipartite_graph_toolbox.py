@@ -23,18 +23,19 @@ def find_best_pairing(orig_G):
 
     pairing = nx.max_weight_matching(G, weight='proba')
     pairing_cost = np.sum([orig_G.edges[u, v]['proba'] for u, v in pairing])
-    return SeqToSeqPairing(len(pairing), pairing_cost, pairing)
+    return SeqToSeqPairing(len(pairing), pairing_cost, pairing, G.graph['name'])
 
 
 class SeqToSeqPairing:
-    def __init__(self, len_pairing, pairing_cost, pairing):
+    def __init__(self, len_pairing, pairing_cost, pairing, name):
         self.pairing = pairing
         self.len = len_pairing
         self.pairing_cost = pairing_cost
+        self.s1, self.s2 = name
 
     def to_string(self):
         paired_identifiers = ",".join([f"{x}--{y}" for x,y in self.pairing])
-        desc = f"{self.pairing_cost};{self.len};{paired_identifiers}"
+        desc = f"{self.s1};{self.s2};{self.pairing_cost};{self.len};{paired_identifiers}"
         return desc
 
     @staticmethod

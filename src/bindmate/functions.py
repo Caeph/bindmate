@@ -7,7 +7,7 @@ from seq_to_seq_matchscores import *
 
 class PairingProbabilityCalculator:
     def __init__(self, k, metrics, material_saving_dir,
-                 max_em_step=None, preselection_part=0.5,
+                 max_em_step=30, preselection_part=0.5,
                  background_type=None, background_size=None, **bgkwargs):
         # set up kmer similarity functions
         # set up preselection no

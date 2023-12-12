@@ -42,6 +42,7 @@ def calculate_seq_to_seq_similarities(kmer_match_proba_obj, threads=5):
     for item in tqdm(X.groupby(by=['seq1_index', 'seq2_index'])):
         name, group = item
         G = create_bipartite_graph(group)
+        G.graph['name'] = name  # s1, s2 indices
         graphs.append(G)
 
     print("Calculating distance as perfect matching")
