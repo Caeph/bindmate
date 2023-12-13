@@ -98,7 +98,14 @@ def __optimize(all_ranks, full_metrics, priors=None, max_step=10, tolerance=0.00
     print("Calculating final probability")
     probas_0 = models[0].calculate_probability(all_ranks)
     probas_1 = models[1].calculate_probability(all_ranks)
-    return probas_0, probas_1
+
+    # calculate match probability given metrics
+    prior_0, prior_1 = [em_algo.priors[z] for z in [0, 1]]
+    metrics_proba = probas_0 * prior_0 + probas_1 * prior_1
+    match_given_metrics = probas_1 * prior_1 / metrics_proba
+    mismatch_given_metrics = probas_0 * prior_0 / metrics_proba
+
+    return mismatch_given_metrics, match_given_metrics
 
 
 def __store(save_results_path, pairwise_ranks, kmer_combinations, metrics):
@@ -220,7 +227,7 @@ def __calculate_kmer_to_kmer_matchscores(unique_kmers, kmers_mapped_to_sqs,
 
     # em algo for score calculation
     print("Starting optimization...")
-    probas_0, probas_1 = __optimize(pairwise_ranks, full_metrics,
+    mismatch_proba, match_proba = __optimize(pairwise_ranks, full_metrics,
                                     max_step=max_em_step, em_params_file=em_params_file)
     print(f"Probabilities calculated, optimization complete: {time.time() - start}")
     start = time.time()
@@ -229,16 +236,16 @@ def __calculate_kmer_to_kmer_matchscores(unique_kmers, kmers_mapped_to_sqs,
     del pairwise_ranks
 
     # preselection, keep mapability!!!
-    selected_indices = __preselect(probas_0, probas_1, preselection_part, kmer_combinations)
+    selected_indices = __preselect(mismatch_proba, match_proba, preselection_part, kmer_combinations)
     print(f"Preselection done: {time.time() - start}")
     start = time.time()
 
     selected_kmer_combinations = kmer_combinations[selected_indices, :]
-    selected_proba_0 = probas_0[selected_indices]
-    selected_proba_1 = probas_1[selected_indices]
+    selected_mismatch_proba = mismatch_proba[selected_indices]
+    selected_match_proba = match_proba[selected_indices]
 
     results = PairingResults(
-        unique_kmers, selected_kmer_combinations, selected_proba_0, selected_proba_1,
+        unique_kmers, selected_kmer_combinations, selected_mismatch_proba, selected_match_proba,
         kmers_mapped_to_sqs
     )
     return results
