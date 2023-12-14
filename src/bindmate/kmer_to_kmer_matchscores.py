@@ -244,8 +244,9 @@ def __calculate_kmer_to_kmer_matchscores(unique_kmers, kmers_mapped_to_sqs,
     selected_mismatch_proba = mismatch_proba[selected_indices]
     selected_match_proba = match_proba[selected_indices]
 
+    #  unique_kmers, kmer_combinations, probas_1, probas_0, mapped_kmers
     results = PairingResults(
-        unique_kmers, selected_kmer_combinations, selected_mismatch_proba, selected_match_proba,
+        unique_kmers, selected_kmer_combinations, selected_match_proba, selected_mismatch_proba,
         kmers_mapped_to_sqs
     )
     return results
