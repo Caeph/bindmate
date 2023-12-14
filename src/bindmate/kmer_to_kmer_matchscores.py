@@ -100,12 +100,13 @@ def __optimize(all_ranks, full_metrics, priors=None, max_step=10, tolerance=0.00
     probas_1 = models[1].calculate_probability(all_ranks)
 
     # calculate match probability given metrics
-    prior_0, prior_1 = [em_algo.priors[z] for z in [0, 1]]
-    metrics_proba = probas_0 * prior_0 + probas_1 * prior_1
-    match_given_metrics = probas_1 * prior_1 / metrics_proba
-    mismatch_given_metrics = probas_0 * prior_0 / metrics_proba
-
-    return mismatch_given_metrics, match_given_metrics
+    # prior_0, prior_1 = [em_algo.priors[z] for z in [0, 1]]
+    # metrics_proba = probas_0 * prior_0 + probas_1 * prior_1
+    # match_given_metrics = probas_1 * prior_1 / metrics_proba
+    # mismatch_given_metrics = probas_0 * prior_0 / metrics_proba
+    #
+    # return mismatch_given_metrics, match_given_metrics
+    return probas_0, probas_1
 
 
 def __store(save_results_path, pairwise_ranks, kmer_combinations, metrics):
