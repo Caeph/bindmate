@@ -1,4 +1,3 @@
-# imports here
 from kmer_to_kmer_matchscores import calculate_kmer_to_kmer_matchscores, PairingResults
 import input_loading
 import os

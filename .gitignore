@@ -1,4 +1,6 @@
 *.fasta
+*.fa
+*.fai
 # test input
 *.log
 

@@ -8,10 +8,10 @@ def main():
     #
     out = "../../test_results_match_probabilities"
     tool = PairingProbabilityCalculator(24, [
-                                 "lcs",
+                                # "lcs",
                                 # "hoco_iou_human_full",
                                  "hoco_iou_human_basic_domains",
-                                "probound_mse_human"
+                                # "probound_mse_human"
                             ], out, background_type="sampled", background_size=1500,
                                         background_source_file='backgrounds/upstream2000.fa',
                                         )

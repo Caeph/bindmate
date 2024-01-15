@@ -3,17 +3,31 @@
   <component name="CsvFileAttributes">
     <option name="attributeMap">
       <map>
-        <entry key="/test_results_match_probabilities/seq2seq_results.csv">
+        <entry key="/src/bindmate/kmer/sources_for_motif_based_scoring/hocomoco/datasets.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value=";" />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/test_results_match_probabilities/metric_ranks.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />
             </Attribute>
           </value>
         </entry>
-        <entry key="/test_results_match_probabilities/test_store.csv">
+        <entry key="/test_results_match_probabilities/recorded_parameters.csv">
           <value>
             <Attribute>
-              <option name="separator" value="," />
+              <option name="separator" value=";" />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="/test_results_match_probabilities/seq2seq_results.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value=";" />
             </Attribute>
           </value>
         </entry>
