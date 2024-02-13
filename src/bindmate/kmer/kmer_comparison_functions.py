@@ -7,6 +7,8 @@ import Bio.motifs as bmotifs
 import pyProBound
 from tqdm import tqdm
 import os
+import rpy2.robjects as robjects
+robjects.r('library(BiocManager)')
 
 script_dir = os.path.split(os.path.realpath(__file__))[0]
 
@@ -115,10 +117,12 @@ class LCSmetric(Metric):
             # 1
             dict(argmax=distributions["univariate_gaussian"]["argmax"],
                  proba=distributions["univariate_gaussian"]["proba"],
+                 params_bounds=[(0, int(10e8)), (0, int(10e8))],
                  initial_parameters=[50, 5]),
             # 0
             dict(argmax=distributions["univariate_gaussian"]["argmax"],
                  proba=distributions["univariate_gaussian"]["proba"],
+                 params_bounds=[(0, int(10e8)), (0, int(10e8))],
                  initial_parameters=[100, 5])
         )
 
@@ -126,6 +130,94 @@ class LCSmetric(Metric):
         kmer1, kmer2 = self.unique_kmers[i1], self.unique_kmers[i2]
         match = SequenceMatcher(None, kmer1, kmer2).find_longest_match()
         return match.size
+
+
+class GCcontent(Metric):
+    def __init__(self):
+        super().__init__("gc",
+                         "distance",
+                         "Difference in GC content")
+
+        # TODO set params - should be poisson/exponentials or sth like that
+        super().define_optimalization_params(
+            # 1
+            # dict(argmax=distributions["univariate_gaussian"]["argmax"],
+            #      proba=distributions["univariate_gaussian"]["proba"],
+            #      params_bounds=[(0, int(10e8)), (0, int(10e8))],
+            #      initial_parameters=[50, 5]),
+            # # 0
+            # dict(argmax=distributions["univariate_gaussian"]["argmax"],
+            #      proba=distributions["univariate_gaussian"]["proba"],
+            #      params_bounds=[(0, int(10e8)), (0, int(10e8))],
+            #      initial_parameters=[100, 5])
+            dict(argmax=distributions["univariate_geometric"]["argmax"],
+                 proba=distributions["univariate_geometric"]["proba"],
+                 params_bounds=[(0, 1)],
+                 initial_parameters=[0.01]),
+            # 0
+            dict(argmax=distributions["univariate_uniform"]["argmax"],
+                 proba=distributions["univariate_uniform"]["proba"],
+                 params_bounds=[(0, 10e8)],
+                 initial_parameters=[1000])
+        )
+        self.gc = None
+
+    def initialize(self, unique_kmers):
+        arr = np.vstack([np.array(list(x)) for x in unique_kmers])
+        self.gc = np.sum((arr == 'G') | (arr == 'C'), axis=1)
+
+    def compare_kmers(self, i1, i2):
+        a = self.gc[i1]
+        b = self.gc[i2]
+        return np.abs(a - b)
+
+
+class ShapeMetric(Metric):
+    def __init__(self, shape_parameter):
+        super().__init__("shape",
+                         "distance",
+                         "MSE of chosen shape params")
+        self.shape_parameter = shape_parameter
+        # TODO set params - should be poisson/exponentials or sth like that
+        super().define_optimalization_params(
+            # 1
+            dict(argmax=distributions["univariate_geometric"]["argmax"],
+                 proba=distributions["univariate_geometric"]["proba"],
+                 params_bounds=[(0, 1)],
+                 initial_parameters=[0.01]),
+            # 0
+            dict(argmax=distributions["univariate_uniform"]["argmax"],
+                 proba=distributions["univariate_uniform"]["proba"],
+                 params_bounds=[(0, 10e8)],
+                 initial_parameters=[1000])
+        )
+        self.shape_values = None
+
+    def initialize(self, unique_kmers):
+        robjects.r('library(DNAshapeR)')
+        temp_fasta_name = "tmp.fasta"
+        with open(temp_fasta_name, mode='w') as temp_fasta:
+            # put stuff to tempfile
+            for i, item in enumerate(unique_kmers):
+                print(f">{i}\n{item}", file=temp_fasta)
+
+            # Call the getShape function
+        result = robjects.r('getShape')(temp_fasta_name)
+
+        def strip_nan(array):
+            good = np.where(~np.isnan(array[0,:]))[0]
+            return array[:, good]
+
+        pyresult = {name: np.array(val) for name, val in zip(result.names, list(result))}
+        self.shape_values = strip_nan(pyresult[self.shape_parameter])
+        os.remove(temp_fasta_name)
+        for name in pyresult.keys():
+            os.remove(temp_fasta_name+f".{name}")
+
+    def compare_kmers(self, i1, i2):
+        one, two = self.shape_values[i1, :], self.shape_values[i2, :]
+        diff = (one - two)
+        return np.mean(diff * diff)
 
 
 class PFMmetric(Metric):
@@ -156,7 +248,8 @@ class PFMmetric(Metric):
         pfm_database = self.load_pfm_database()
         if self.selected_motifs is not None:
             pfm_database = self.filter_db(pfm_database)
-        self.bg_kmers = self.bg_kmers.astype(unique_kmers.dtype)
+        if self.bg_kmers is not None:
+            self.bg_kmers = self.bg_kmers.astype(unique_kmers.dtype)
         results = []
 
         counter = 0
@@ -165,8 +258,15 @@ class PFMmetric(Metric):
             def score_motif(kmer):
                 return score(kmer, pfm_database[motif])
 
+            if pfm_database[motif].length > len(unique_kmers[0]):
+                print(f"Skipping {motif} as its longer than k")
+                continue
+
             vectorized_func = np.vectorize(score_motif)
             affinities = vectorized_func(unique_kmers)
+
+            if len(np.where(np.isnan(affinities))[0]):
+                raise AttributeError(f"NAN ENCOUNTERED AT {motif}, {np.where(np.isnan(affinities))}")
             if self.bg_kmers is not None:
                 bg_affinities = vectorized_func(self.bg_kmers)
                 affinities = normalize(affinities, bg_affinities)
@@ -190,10 +290,12 @@ class HocomocoIOU(PFMmetric):
             # 1
             dict(argmax=distributions["univariate_gaussian"]["argmax"],
                  proba=distributions["univariate_gaussian"]["proba"],
+                 params_bounds=[(0, int(10e8)), (0, int(10e8))],
                  initial_parameters=[1000, 50]),
             # 0
             dict(argmax=distributions["univariate_gaussian"]["argmax"],
                  proba=distributions["univariate_gaussian"]["proba"],
+                 params_bounds=[(0, int(10e8)), (0, int(10e8))],
                  initial_parameters=[5000, 50])
         )
 
@@ -209,6 +311,39 @@ class HocomocoIOU(PFMmetric):
         if union == 0:
             return 0
         return intersect / union
+
+
+class HocomocoMSE(PFMmetric):
+    def __init__(self, binding_matrix_file,  # binder_threshold,
+                 bg_kmers=None, selected_motifs=None):
+        super().__init__(
+            "hocomoco_mse",
+            "distance",
+            "MSE with HOCOMOCO affinities", binding_matrix_file,
+            bg_kmers=bg_kmers,
+            selected_motifs=selected_motifs
+        )
+        # self.binder_threshold = binder_threshold
+        super().define_optimalization_params(
+            # 1
+            dict(argmax=distributions["univariate_geometric"]["argmax"],
+                 proba=distributions["univariate_geometric"]["proba"],
+                 params_bounds=[(0, int(10e8)), (0, int(10e8))],
+                 initial_parameters=[0.01]),
+            # 0
+            dict(argmax=distributions["univariate_uniform"]["argmax"],
+                 proba=distributions["univariate_uniform"]["proba"],
+                 params_bounds=[(0, int(10e8)), (0, int(10e8))],
+                 initial_parameters=[1000])
+        )
+
+    def initialize(self, unique_kmers):
+        super().initialize(unique_kmers)
+
+    def compare_kmers(self, i1, i2):
+        one, two = self.affinities[i1, :], self.affinities[i2, :]
+        diff = (one - two)
+        return np.mean(diff * diff)
 
 
 class ProBoundMetric(Metric):
@@ -280,10 +415,12 @@ class ProBoundHumanMSE(ProBoundMetric):
             # 1
             dict(argmax=distributions["univariate_geometric"]["argmax"],
                  proba=distributions["univariate_geometric"]["proba"],
+                 params_bounds=[(0, 1)],
                  initial_parameters=[0.01]),
             # 0
             dict(argmax=distributions["univariate_uniform"]["argmax"],
                  proba=distributions["univariate_uniform"]["proba"],
+                 params_bounds=[(0, int(10e8))],
                  initial_parameters=[1000])
         )
 
@@ -291,4 +428,3 @@ class ProBoundHumanMSE(ProBoundMetric):
         one, two = self.affinities[i1, :], self.affinities[i2, :]
         diff = (one - two)
         return np.mean(diff * diff)
-

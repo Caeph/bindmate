@@ -21,9 +21,16 @@ def create_background(k, background_type, bg_size, **kwargs):
         def sample_random_kmer(sequence):
             l = len(sequence) - k
             start = np.random.randint(l)
-            return sequence[start:start+k]
+            output = sequence[start:start + k]
+            return output
+
+        undefined_seq = "".join(['N' for _ in range(k)])
 
         bg_df['kmer'] = bg_df['seq'].swifter.progress_bar(False).apply(sample_random_kmer).str.upper()
+        pre_no = len(bg_df)
+        bg_df = bg_df[bg_df["kmer"] != undefined_seq]
+        if len(bg_df) != pre_no:
+            print(f"Removed {pre_no - len(bg_df)} undefined sequences from background")
         bgkmers = bg_df['kmer'].values
     else:
         raise NotImplementedError("No other background type is implemented.")

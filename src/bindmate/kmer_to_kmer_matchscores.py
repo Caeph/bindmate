@@ -6,13 +6,15 @@ import pandas as pd
 
 from kmer.make_kmers import *
 from predefined_functions import initialize_available_functions
-from itertools import combinations
-from joblib import Parallel, delayed, parallel_config, cpu_count
+# from itertools import combinations
+from joblib import cpu_count
 from em_algorithm.optimization import *
 import swifter
-import multiprocessing
 
-import dask.array as da
+
+# import multiprocessing
+
+# import dask.array as da
 
 
 def __read_unique_kmers(input_sqs, k):
@@ -75,8 +77,77 @@ def __get_kmer_combinations(unique_kmers):
     return np.array(np.meshgrid(indices, indices))
 
 
-def __optimize(all_ranks, full_metrics, priors=None, max_step=10, tolerance=0.0001, em_params_file=None):
-    print()
+def __optimize_arbitrary_no_weighted_models(no_matched_models, all_ranks, full_metrics, alpha=0.1,
+                                            priors=None, max_step=10, tolerance=0.0001, em_params_file=None):
+    unmatched = WeightedProbabilityModel(0, full_metrics)
+    matched_models_z = list(range(1, no_matched_models + 1))
+    all_models = {z: WeightedProbabilityModel(z, full_metrics, get_params_from_matched=True) for z in matched_models_z}
+    all_models[0] = unmatched
+    mismatch_proba, match_proba = __optimize_arbitrary_no_models_inner(no_matched_models,
+                                                                       matched_models_z,
+                                                                       all_models,
+                                                                       all_ranks,
+                                                                       max_step=max_step,
+                                                                       tolerance=tolerance,
+                                                                       em_params_file=em_params_file,
+                                                                       alpha=alpha,
+                                                                       priors=priors)
+    return mismatch_proba, match_proba
+
+
+def __optimize_arbitrary_no_models_inner(no_matched_models, matched_models_z, all_models, all_ranks, max_step=10,
+                                         tolerance=0.0001, em_params_file=None, alpha=0.1, priors=None):
+    if priors is None:
+        priors = {z: (alpha / no_matched_models) + np.random.normal(loc=0, scale=0.05) for z in matched_models_z}
+        priors[0] = 1 - np.sum([priors[z] for z in matched_models_z])
+
+    em_algo = EMOptimizer(
+        possible_latent=[0, *matched_models_z],
+        priors=priors,
+        models=all_models
+    )
+    print("Initialization complete...")
+    if em_params_file is None:
+        models = em_algo.optimize(all_ranks, max_step, tolerance)
+    else:
+        with open(em_params_file, mode='w') as writer:
+            print('unmatched_params,matched_params,prior_0,prior_1', file=writer)
+            models = em_algo.optimize(all_ranks, max_step, tolerance, parameter_colector=writer)
+    print("Calculating final probability")
+
+    probas_0 = models[0].calculate_probability(all_ranks)
+    mismatch_proba = probas_0
+
+    # this is a logical or
+    match_proba = np.zeros_like(probas_0)
+    for z in matched_models_z:
+        match_proba = models[z].calculate_probability(all_ranks) + match_proba
+        # match_proba = np.fmax(models[z].calculate_probability(all_ranks), match_proba)
+
+    return mismatch_proba, match_proba
+
+
+def __optimize_arbitrary_no_models(no_matched_models, all_ranks, full_metrics, alpha=0.1,
+                                   priors=None, max_step=10, tolerance=0.0001, em_params_file=None):
+    unmatched = ProbabilityModel(0, full_metrics)
+    matched_models_z = list(range(1, no_matched_models + 1))
+    all_models = {z: ProbabilityModel(z, full_metrics, get_params_from_matched=True) for z in matched_models_z}
+    all_models[0] = unmatched
+
+    mismatch_proba, match_proba = __optimize_arbitrary_no_models_inner(no_matched_models,
+                                                                       matched_models_z,
+                                                                       all_models,
+                                                                       all_ranks,
+                                                                       max_step=max_step,
+                                                                       tolerance=tolerance,
+                                                                       em_params_file=em_params_file,
+                                                                       alpha=alpha,
+                                                                       priors=priors)
+
+    return mismatch_proba, match_proba
+
+
+def __optimize_two_models(all_ranks, full_metrics, priors=None, max_step=10, tolerance=0.0001, em_params_file=None):
     matched = ProbabilityModel(1, full_metrics)
     unmatched = ProbabilityModel(0, full_metrics)
 
@@ -99,21 +170,14 @@ def __optimize(all_ranks, full_metrics, priors=None, max_step=10, tolerance=0.00
     probas_0 = models[0].calculate_probability(all_ranks)
     probas_1 = models[1].calculate_probability(all_ranks)
 
-    # calculate match probability given metrics
-    # prior_0, prior_1 = [em_algo.priors[z] for z in [0, 1]]
-    # metrics_proba = probas_0 * prior_0 + probas_1 * prior_1
-    # match_given_metrics = probas_1 * prior_1 / metrics_proba
-    # mismatch_given_metrics = probas_0 * prior_0 / metrics_proba
-    #
-    # return mismatch_given_metrics, match_given_metrics
     return probas_0, probas_1
 
 
 def __store(save_results_path, pairwise_ranks, kmer_combinations, metrics):
     results = pd.DataFrame(np.hstack([kmer_combinations, pairwise_ranks]),
                            columns=[
-                               "kmer_index_1", "kmer_index_2",*[m.name for m in metrics]
-                                    ]
+                               "kmer_index_1", "kmer_index_2", *[m.name for m in metrics]
+                           ]
                            )
     results.to_csv(save_results_path, index=False)
 
@@ -184,9 +248,7 @@ class PairingResults:
         return PairingResults(unique_kmers, kmer_combinations, probas_1, probas_0, mapped_kmers)
 
 
-def __calculate_kmer_to_kmer_matchscores(unique_kmers, kmers_mapped_to_sqs,
-                                         full_metrics, cpus, save_results, preselection_part,
-                                         max_em_step, em_params_file):
+def __calculate_kmer_metrics(unique_kmers, full_metrics, cpus, save_results):
     start = time.time()
 
     # calculation of metric ranks
@@ -225,11 +287,55 @@ def __calculate_kmer_to_kmer_matchscores(unique_kmers, kmers_mapped_to_sqs,
 
     del rank_results, metric_values, rank_values  # cleanup
     print("Cleanup done.")
+    return pairwise_ranks, kmer_combinations
+
+
+def __calculate_kmer_to_kmer_matchscores_multimodel(no_matched_models, unique_kmers, kmers_mapped_to_sqs,
+                                                    full_metrics, cpus, save_results, preselection_part,
+                                                    max_em_step, em_params_file):
+    start = time.time()
+    pairwise_ranks, kmer_combinations = __calculate_kmer_metrics(unique_kmers, full_metrics, cpus, save_results)
+
+    print(f"Starting optimization with {no_matched_models}...")
+    start = time.time()
+    # mismatch_proba, match_proba = __optimize_arbitrary_no_models(no_matched_models, pairwise_ranks, full_metrics,
+    #                                                             max_step=max_em_step, em_params_file=em_params_file)
+
+    mismatch_proba, match_proba = __optimize_arbitrary_no_weighted_models(no_matched_models, pairwise_ranks,
+                                                                          full_metrics,
+                                                                          max_step=max_em_step,
+                                                                          em_params_file=em_params_file)
+
+    print(f"Probabilities calculated, optimization complete: {time.time() - start}")
+    start = time.time()
+
+    # preselection, keep mapability!!!
+    selected_indices = __preselect(mismatch_proba, match_proba, preselection_part, kmer_combinations)
+    print(f"Preselection done: {time.time() - start}")
+    start = time.time()
+
+    selected_kmer_combinations = kmer_combinations[selected_indices, :]
+    selected_mismatch_proba = mismatch_proba[selected_indices]
+    selected_match_proba = match_proba[selected_indices]
+
+    #  unique_kmers, kmer_combinations, probas_1, probas_0, mapped_kmers
+    results = PairingResults(
+        unique_kmers, selected_kmer_combinations, selected_match_proba, selected_mismatch_proba,
+        kmers_mapped_to_sqs
+    )
+    return results
+
+
+def __calculate_kmer_to_kmer_matchscores(unique_kmers, kmers_mapped_to_sqs,
+                                         full_metrics, cpus, save_results, preselection_part,
+                                         max_em_step, em_params_file):
+    pairwise_ranks, kmer_combinations = __calculate_kmer_metrics(unique_kmers, full_metrics, cpus, save_results)
 
     # em algo for score calculation
     print("Starting optimization...")
-    mismatch_proba, match_proba = __optimize(pairwise_ranks, full_metrics,
-                                    max_step=max_em_step, em_params_file=em_params_file)
+    start = time.time()
+    mismatch_proba, match_proba = __optimize_two_models(pairwise_ranks, full_metrics,
+                                                        max_step=max_em_step, em_params_file=em_params_file)
     print(f"Probabilities calculated, optimization complete: {time.time() - start}")
     start = time.time()
 
@@ -254,7 +360,8 @@ def __calculate_kmer_to_kmer_matchscores(unique_kmers, kmers_mapped_to_sqs,
 
 
 def calculate_kmer_to_kmer_matchscores(inputdf, k, metrics, background_info,
-                                       cpus=-1, max_em_step=20,
+                                       use_motifs_individually=False,
+                                       cpus=-1, max_em_step=20, no_matched_models=None,
                                        save_results='../../test_results_match_probabilities/test_store.csv',
                                        preselection_part=0.5, em_params_file=None):
     # curate the metrics
@@ -262,7 +369,7 @@ def calculate_kmer_to_kmer_matchscores(inputdf, k, metrics, background_info,
         cpus = cpu_count()
 
     predefined_functions = initialize_available_functions(
-        k, *background_info
+        k, use_motifs_individually, *background_info
     )
 
     # read input kmers
@@ -276,14 +383,22 @@ def calculate_kmer_to_kmer_matchscores(inputdf, k, metrics, background_info,
             full.initialize(unique_kmers)
             print(f"Metric {full.name} initialized: {np.round(time.time() - start, decimals=5)}")
         else:
-            # TODO -- user defined or stupid
+            # TODO -- is the unknown method user defined or just stupid?
             raise NotImplementedError("This function is not implementented.")
 
         full_metrics.append(full)
     # full metrics is a list of metric dictionaries
 
     # do the work
-    pairwise_scoring_results = __calculate_kmer_to_kmer_matchscores(
-        unique_kmers, kmers_mapped_to_sqs, full_metrics, cpus, save_results, preselection_part,
-        max_em_step, em_params_file)
+    if (no_matched_models is None) or (no_matched_models == 1):
+        pairwise_scoring_results = __calculate_kmer_to_kmer_matchscores(
+            unique_kmers, kmers_mapped_to_sqs, full_metrics, cpus, save_results, preselection_part,
+            max_em_step, em_params_file)
+    else:
+        pairwise_scoring_results = __calculate_kmer_to_kmer_matchscores_multimodel(no_matched_models,
+                                                                                   unique_kmers, kmers_mapped_to_sqs,
+                                                                                   full_metrics, cpus, save_results,
+                                                                                   preselection_part,
+                                                                                   max_em_step, em_params_file
+                                                                                   )
     return pairwise_scoring_results

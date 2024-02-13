@@ -6,6 +6,7 @@ pyprobound~=0.0.14
 scipy~=1.11.4
 tqdm~=4.66.1
 networkx~=3.2.1
-dask~=2023.11.0
 joblib~=1.3.2
+seaborn~=0.13.1
+matplotlib~=3.8.2
 biopython

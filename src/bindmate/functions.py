@@ -6,7 +6,7 @@ from seq_to_seq_matchscores import *
 
 class PairingProbabilityCalculator:
     def __init__(self, k, metrics, material_saving_dir,
-                 max_em_step=30, preselection_part=0.5,
+                 max_em_step=10, preselection_part=0.5, no_matched_models=None,
                  background_type=None, background_size=None, **bgkwargs):
         # set up kmer similarity functions
         # set up preselection no
@@ -15,6 +15,7 @@ class PairingProbabilityCalculator:
         self.material_saving_dir = material_saving_dir
         self.background = [background_type, background_size, bgkwargs]
         self.max_em_step = max_em_step
+        self.no_matched_models = no_matched_models
         self.preselection_part = preselection_part
 
     def add_user_defined_metric(self, function):
@@ -57,7 +58,7 @@ class PairingProbabilityCalculator:
                                                         self.material_saving_dir, "metric_ranks.csv"
                                                        ), em_params_file=os.path.join(
                                                         self.material_saving_dir, "recorded_parameters.csv"
-                                                       ),
+                                                       ), no_matched_models=self.no_matched_models,
                                                        max_em_step=self.max_em_step,
                                                        preselection_part=self.preselection_part
                                                        )
