@@ -44,6 +44,7 @@ class ProbabilityModel:
             # p = np.log(
             #     np.vectorize(lambda xi: p_func(xi, param) + pseudocount)(x)
             # )
+            # TODO nan check
 
             result = result + p
             if type(result) is pd.Series:
@@ -80,9 +81,30 @@ class WeightedProbabilityModel(ProbabilityModel):
         super().__init__(z, metrics, get_params_from_matched)
         self.parameters = [[1, *x] for x in self.parameters]
 
+
+    def calculate_probability(self, observed_values, pseudocount=10e-10):
+        # Pr[observed | params, z] for every observation
+        # this model should be rewritten based on the particular distribution
+
+        result = np.zeros(len(observed_values))
+        for i in range(observed_values.shape[1]):
+            p_func = self.optimization_info[i]['proba']
+            param = self.parameters[i][1:]  # without weight
+            x = pd.Series(observed_values[:, i])
+            p = np.log(
+                x.swifter.apply(lambda xi: p_func(xi, param) + pseudocount)
+            )  # considerably faster -- uses dask
+            result = result + p
+            if type(result) is pd.Series:
+                result = result.values
+
+        return np.exp(result)
+
+
     # does not require to do the theoretical gradient calculating, proceeds numerically
     # the bounds could be a weakness - TODO maybe redefine?
     def argmax_for_parameters(self, model_qs, observed_values):
+        print("running argmax for params in weighted proba model")
         new_parameters = []
         for i, optimizer in enumerate(self.optimization_info):
             p_func = optimizer['proba']
@@ -103,6 +125,7 @@ class EMOptimizer:
         self.priors = priors  # dictionary z: prior[z]
 
     def __e_step(self, observed_values):
+        print("E-step started")
         qs = {}
         # for every z, calculate PRIOR[z] * Pr[x | z, params]
         for z in self.z:
@@ -118,9 +141,11 @@ class EMOptimizer:
         for z in self.z:
             qs[z] = qs[z] / bottom
 
+        print("E-step done")
         return qs
 
     def __m_step(self, qs, observed_values, thr=0.001):
+        print("M-step started")
         new_priors = {}
         for z in self.z:
             p = np.mean(qs[z])
@@ -132,6 +157,7 @@ class EMOptimizer:
         for z in self.z:
             new_theta[z] = self.models[z].argmax_for_parameters(qs[z], observed_values)
 
+        print("M-step done")
         return new_priors, new_theta
 
     def __record(self, parameters, colector, sep=';', subsep=';'):

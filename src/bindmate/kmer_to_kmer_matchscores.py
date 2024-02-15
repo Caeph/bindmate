@@ -98,7 +98,8 @@ def __optimize_arbitrary_no_weighted_models(no_matched_models, all_ranks, full_m
 def __optimize_arbitrary_no_models_inner(no_matched_models, matched_models_z, all_models, all_ranks, max_step=10,
                                          tolerance=0.0001, em_params_file=None, alpha=0.1, priors=None):
     if priors is None:
-        priors = {z: (alpha / no_matched_models) + np.random.normal(loc=0, scale=0.05) for z in matched_models_z}
+        unif = (alpha / no_matched_models)
+        priors = {z: unif + np.random.uniform(-unif / 2, unif / 2) for z in matched_models_z}
         priors[0] = 1 - np.sum([priors[z] for z in matched_models_z])
 
     em_algo = EMOptimizer(

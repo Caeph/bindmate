@@ -152,7 +152,7 @@ class GCcontent(Metric):
             #      initial_parameters=[100, 5])
             dict(argmax=distributions["univariate_geometric"]["argmax"],
                  proba=distributions["univariate_geometric"]["proba"],
-                 params_bounds=[(0, 1)],
+                 params_bounds=[(10e-10, 1-10e-10)],
                  initial_parameters=[0.01]),
             # 0
             dict(argmax=distributions["univariate_uniform"]["argmax"],
@@ -183,7 +183,7 @@ class ShapeMetric(Metric):
             # 1
             dict(argmax=distributions["univariate_geometric"]["argmax"],
                  proba=distributions["univariate_geometric"]["proba"],
-                 params_bounds=[(0, 1)],
+                 params_bounds=[(10e-10, 1-10e-10)],
                  initial_parameters=[0.01]),
             # 0
             dict(argmax=distributions["univariate_uniform"]["argmax"],
@@ -328,7 +328,7 @@ class HocomocoMSE(PFMmetric):
             # 1
             dict(argmax=distributions["univariate_geometric"]["argmax"],
                  proba=distributions["univariate_geometric"]["proba"],
-                 params_bounds=[(0, int(10e8)), (0, int(10e8))],
+                 params_bounds=[(10e-10, 1-10e-10)],
                  initial_parameters=[0.01]),
             # 0
             dict(argmax=distributions["univariate_uniform"]["argmax"],
@@ -415,7 +415,7 @@ class ProBoundHumanMSE(ProBoundMetric):
             # 1
             dict(argmax=distributions["univariate_geometric"]["argmax"],
                  proba=distributions["univariate_geometric"]["proba"],
-                 params_bounds=[(0, 1)],
+                 params_bounds=[(10e-10, 1-10e-10)],
                  initial_parameters=[0.01]),
             # 0
             dict(argmax=distributions["univariate_uniform"]["argmax"],

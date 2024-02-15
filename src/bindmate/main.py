@@ -10,11 +10,18 @@ def main():
     out = "../../test_results_match_probabilities"
     tool = PairingProbabilityCalculator(24,
                                         [
-                                            # "lcs",
-                                            # "hoco_iou_human_full",
-                                            "hoco_iou_human_basic_domains",
-                                            # "gc",
-                                          #  'hoco_mse_human_helix-turn-helix_domains',
+                                            # 'hoco_mse_human_basic_helix-loop-helix_factors_(bhlh)',
+                                            # 'hoco_mse_human_basic_leucine_zipper_factors_(bzip)',
+                                            # 'hoco_mse_human_homeo_domain_factors',
+                                            # 'hoco_mse_human_helix-turn-helix_domains',
+                                            # 'hoco_mse_human_basic_domains',
+                                            'gc',
+                                            # 'shape:EP',
+                                            # 'shape:HelT',
+                                            # 'shape:MGW',
+                                            # 'shape:ProT',
+                                            # 'shape:Roll',
+                                            # "probound_mse_human"
                                         ],
                                         out, background_type="sampled", background_size=1500,
                                         background_source_file='backgrounds/upstream2000.fa',
