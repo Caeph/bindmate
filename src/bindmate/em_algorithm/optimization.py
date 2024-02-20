@@ -218,8 +218,8 @@ class WeightedModelEnsemble(ProbabilityModelEnsemble):
             return params
 
         # numerically minimize objective function
-        # minimizing = optimize.minimize(full_objective, np.array(init_params), bounds=param_bounds)
-        minimizing = optimize.dual_annealing(full_objective, bounds=param_bounds)
+        minimizing = optimize.minimize(full_objective, np.array(init_params), bounds=param_bounds)
+        # minimizing = optimize.dual_annealing(full_objective, bounds=param_bounds)
         best_params = flat_array_to_params_dict(minimizing.x)
 
         best_p_xmi = all_probas(best_params)
