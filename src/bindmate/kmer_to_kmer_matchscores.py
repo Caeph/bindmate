@@ -95,8 +95,72 @@ def __optimize_arbitrary_no_weighted_models(no_matched_models, all_ranks, full_m
     return mismatch_proba, match_proba
 
 
+def __optimize_arbitrary_no_weighted_models_bootstrap(no_matched_models, all_ranks, full_metrics, alpha=0.1,
+                                            priors=None, max_step=10, tolerance=0.0001, em_params_file=None,
+                                                      bootstrap_no=5, bootstrap_size=int(1e5)):
+    mean_mismatch_proba, mean_match_proba = np.zeros(len(all_ranks)), np.zeros(len(all_ranks))
+    l = len(all_ranks)
+
+    if l < bootstrap_size:
+        return __optimize_arbitrary_no_weighted_models(no_matched_models,
+                                                       all_ranks,
+                                                       full_metrics,
+                                                       alpha,
+                                                       priors,
+                                                       max_step,
+                                                       tolerance,
+                                                       em_params_file)
+    print(f"Bootstrapping {bootstrap_no} times to size {bootstrap_size}.")
+
+    for i in range(bootstrap_no):
+        bootstrapped_ranks = all_ranks[np.random.choice(l, bootstrap_size, replace=False), :]
+
+        unmatched = ProbabilityModel(0, full_metrics)
+        matched_models_z = list(range(1, no_matched_models + 1))
+        all_models = {z: ProbabilityModel(z, full_metrics, get_params_from_matched=True) for z in matched_models_z}
+        all_models[0] = unmatched
+
+        if priors is None:
+            unif = (alpha / no_matched_models)
+            priors = {z: unif + np.random.uniform(-unif / 2, unif / 2) for z in matched_models_z}
+            priors[0] = 1 - np.sum([priors[z] for z in matched_models_z])
+
+        em_algo = EMOptimizer(
+            possible_latent=[0, *matched_models_z],
+            priors=priors,
+            models=all_models,
+            weighted=True
+        )
+        print("Initialization complete...")
+        if em_params_file is None:
+            models = em_algo.optimize(bootstrapped_ranks, max_step, tolerance)
+        else:
+            with open(em_params_file, mode='w') as writer:
+                print('unmatched_params,matched_params,prior_0,prior_1', file=writer)
+                models = em_algo.optimize(bootstrapped_ranks, max_step, tolerance, parameter_colector=writer)
+        print("Calculating final probability")
+
+        probas_0 = models[0].calculate_probability(all_ranks)
+        mismatch_proba = probas_0
+
+        # this is a logical or
+        match_proba = np.zeros_like(probas_0)
+        for z in matched_models_z:
+            match_proba = models[z].calculate_probability(all_ranks) + match_proba
+            # match_proba = np.fmax(models[z].calculate_probability(all_ranks), match_proba)
+
+        # add to bulk
+        mean_mismatch_proba = mean_mismatch_proba + mismatch_proba
+        mean_match_proba = mean_match_proba + match_proba
+
+    mean_mismatch_proba = mean_mismatch_proba / bootstrap_no
+    mean_match_proba = mean_match_proba / bootstrap_no
+
+    return mean_mismatch_proba, mean_match_proba
+
+
 def __optimize_arbitrary_no_models_inner(no_matched_models, matched_models_z, all_models, all_ranks, max_step=10,
-                                         tolerance=0.0001, em_params_file=None, alpha=0.1, priors=None):
+                                         tolerance=0.0001, em_params_file=None, alpha=0.1, priors=None, weighted=False):
     if priors is None:
         unif = (alpha / no_matched_models)
         priors = {z: unif + np.random.uniform(-unif / 2, unif / 2) for z in matched_models_z}
@@ -105,7 +169,8 @@ def __optimize_arbitrary_no_models_inner(no_matched_models, matched_models_z, al
     em_algo = EMOptimizer(
         possible_latent=[0, *matched_models_z],
         priors=priors,
-        models=all_models
+        models=all_models,
+        weighted=weighted
     )
     print("Initialization complete...")
     if em_params_file is None:
@@ -129,7 +194,7 @@ def __optimize_arbitrary_no_models_inner(no_matched_models, matched_models_z, al
 
 
 def __optimize_arbitrary_no_models(no_matched_models, all_ranks, full_metrics, alpha=0.1,
-                                   priors=None, max_step=10, tolerance=0.0001, em_params_file=None):
+                                   priors=None, max_step=10, tolerance=0.0001, em_params_file=None, weighted=False):
     unmatched = ProbabilityModel(0, full_metrics)
     matched_models_z = list(range(1, no_matched_models + 1))
     all_models = {z: ProbabilityModel(z, full_metrics, get_params_from_matched=True) for z in matched_models_z}
@@ -143,7 +208,7 @@ def __optimize_arbitrary_no_models(no_matched_models, all_ranks, full_metrics, a
                                                                        tolerance=tolerance,
                                                                        em_params_file=em_params_file,
                                                                        alpha=alpha,
-                                                                       priors=priors)
+                                                                       priors=priors, weighted=False)
 
     return mismatch_proba, match_proba
 
@@ -293,7 +358,8 @@ def __calculate_kmer_metrics(unique_kmers, full_metrics, cpus, save_results):
 
 def __calculate_kmer_to_kmer_matchscores_multimodel(no_matched_models, unique_kmers, kmers_mapped_to_sqs,
                                                     full_metrics, cpus, save_results, preselection_part,
-                                                    max_em_step, em_params_file):
+                                                    max_em_step, em_params_file, min_size_to_bootstrap=int(1e3),
+                                                    bootstrap_p=0.1):
     start = time.time()
     pairwise_ranks, kmer_combinations = __calculate_kmer_metrics(unique_kmers, full_metrics, cpus, save_results)
 
@@ -302,10 +368,20 @@ def __calculate_kmer_to_kmer_matchscores_multimodel(no_matched_models, unique_km
     # mismatch_proba, match_proba = __optimize_arbitrary_no_models(no_matched_models, pairwise_ranks, full_metrics,
     #                                                             max_step=max_em_step, em_params_file=em_params_file)
 
-    mismatch_proba, match_proba = __optimize_arbitrary_no_weighted_models(no_matched_models, pairwise_ranks,
+    # mismatch_proba, match_proba = __optimize_arbitrary_no_weighted_models(no_matched_models, pairwise_ranks,
+    #                                                                       full_metrics,
+    #                                                                       max_step=max_em_step,
+    #                                                                       em_params_file=em_params_file)
+
+    bs_size = int(np.fmin(len(kmer_combinations)*bootstrap_p, min_size_to_bootstrap))
+    # if bs_size < 1e4:
+    #     bs_size = 1e4
+    mismatch_proba, match_proba = __optimize_arbitrary_no_weighted_models_bootstrap(no_matched_models, pairwise_ranks,
                                                                           full_metrics,
                                                                           max_step=max_em_step,
-                                                                          em_params_file=em_params_file)
+                                                                          em_params_file=em_params_file,
+                                                                          bootstrap_size=bs_size)
+
 
     print(f"Probabilities calculated, optimization complete: {time.time() - start}")
     start = time.time()

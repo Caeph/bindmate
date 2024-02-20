@@ -62,25 +62,197 @@ class ProbabilityModel:
         return new_parameters
 
 
-def argmax_for_weighted_proba(observed_vector, model_qs, probafunc, param_bounds, weight_bounds=(0.1, 100)):
-    def objective(params, pseudocount=10e-10):
-        weight = params[0]
-        fun_params = params[1:]
-        argmaxing = model_qs * weight * np.log(probafunc(observed_vector, fun_params) + pseudocount)
-        return -np.sum(argmaxing)
+# def numerical_argmax_(observed_vector, model_qs, probafunc, param_bounds, weight_bounds=(0.1, 100)):
+#     def objective(params, pseudocount=10e-10):
+#         weight = params[0]
+#         fun_params = params[1:]
+#         argmaxing = model_qs * np.log(probafunc(observed_vector, fun_params) + pseudocount)
+#         return -np.sum(argmaxing)
+#
+#     bounds = (weight_bounds, *param_bounds)
+#
+#     minimizing = optimize.dual_annealing(objective, bounds)
+#     return minimizing.x
 
-    bounds = (weight_bounds, *param_bounds)
+class ProbabilityModelEnsemble:
+    def __init__(self, models):
+        self.models = models
 
-    minimizing = optimize.dual_annealing(objective, bounds)
-    return minimizing.x
+    def calculate_probability(self, z, observed_values):
+        return self.models[z].calculate_probability(observed_values)
+
+    def argmax_params(self, qs, observed_values, new_priors):
+        new_theta = {}
+        for z in self.models.keys():
+            new_theta[z] = self.models[z].argmax_for_parameters(qs[z], observed_values)
+        return new_theta
+
+    def __len__(self):
+        return len(self.models)
+
+    def get_models(self):
+        return self.models
+
+    def set_params(self, parameters, z):
+        self.models[z].set_parameters(parameters)
+
+
+class WeightedModelEnsemble(ProbabilityModelEnsemble):
+    # KL divergence as the weight - no new parameters
+
+    def __init__(self, models):
+        super().__init__(models)
+        self.weights = None
+        # initialize weights TODO
+
+    def calculate_probability(self, z, observed_values, pseudocount=1e-10):
+        # init
+        if self.weights is None:
+            self.weights = {z: {m: 1 for m in range(observed_values.shape[1])} for z in self.models.keys()}
+
+        model = self.models[z]
+
+        result = np.zeros(len(observed_values))
+        for i in range(observed_values.shape[1]):
+            p_func = model.optimization_info[i]['proba']
+            param = model.parameters[i]
+            x = pd.Series(observed_values[:, i])
+            p = np.log(
+                x.swifter.progress_bar(False).apply(lambda xi: p_func(xi, param) + pseudocount)
+            )
+
+            # weighting
+            p = p * self.weights[z][i]
+
+            result = result + p
+            if type(result) is pd.Series:
+                result = result.values
+
+        return np.exp(result)
+
+    def argmax_params(self, qs, observed_values, new_priors):
+        # one call of numerical solving U
+        def KL_divergence_weight(z, m, p_xmi, pseudocount=1e-9):
+            p_xi = np.sum(p_xmi[:, :, m], axis=0) + pseudocount
+
+            p_xi_given_mz = p_xmi[z, :, m]
+
+            w_avg = np.sum((p_xi_given_mz * new_priors[z]) * np.log(
+                p_xi_given_mz / p_xi
+            ))
+            bottom_entropy = np.sum(p_xi * np.log(p_xi))
+
+            return w_avg / bottom_entropy
+
+        def all_probas(params, pseudocount=1e-10):
+            # xmi calculation
+            p_xmi = np.stack([np.zeros_like(observed_values) for z in self.models.keys()]).astype(float)
+            for m in range(observed_values.shape[1]):
+                # x = pd.Series(observed_values[:, m])
+                x = pd.Series(observed_values[:, m])
+                for z in self.models.keys():
+                    model = self.models[z]
+                    param = params[z][m]
+                    p_func = model.optimization_info[m]['proba']
+                    p_xmi[z, :, m] += x.swifter.progress_bar(False).apply(lambda xi: p_func(xi, param) + pseudocount)
+            return p_xmi
+
+        def calculate_weights(p_xmi, minimal_weight=None):
+            weights = {}
+            for z in self.models.keys():
+                weights[z] = {}
+                for m in self.weights[z].keys():
+                    weight_mz = KL_divergence_weight(z, m, p_xmi)
+                    weights[z][m] = weight_mz
+
+            # normalize weights
+            Z = np.sum([weights[z][m] for z in self.models.keys() for m in self.weights[z].keys()])
+            no_z = len(self.models.keys())
+            no_m = observed_values.shape[1]
+            Z = (Z / (no_z * no_m))
+            for z in self.models.keys():
+                for m in self.weights[z].keys():
+                    weights[z][m] = weights[z][m] / Z
+                    if minimal_weight is not None:
+                        weights[z][m] = np.fmax(weights[z][m], minimal_weight)
+            return weights
+
+        def full_objective(params):
+            # reorder params to dictionary if needed
+            params = flat_array_to_params_dict(params)
+
+            p_xmi = all_probas(params)
+            weights = calculate_weights(p_xmi)
+
+            # do calculation
+            result = 0
+            for z in self.models.keys():
+                for m in self.weights[z].keys():
+                    p = p_xmi[z, :, m]
+                    weight_mz = weights[z][m]
+                    current_res = weight_mz * np.sum(p * qs[z])
+                    result = result + current_res
+            return - result
+
+        init_params = []
+        about_params = []
+        param_bounds = []
+        for z in range(len(self.models)):
+            for m in range(observed_values.shape[1]):
+                init_params.extend(self.models[z].parameters[m])
+                param_bounds.extend([check_bounds(bounds, observed_values[:, m]) for bounds in self.models[z].optimization_info[m]['params_bounds']])
+
+                about_params.append(len(self.models[z].parameters[m]))
+
+        def flat_array_to_params_dict(params_vector):
+            index = 0
+            params = {}
+            about_i = 0
+            for z in range(len(self.models)):
+                params[z] = []
+                for m in range(observed_values.shape[1]):
+                    l = about_params[about_i]
+                    params[z].append(params_vector[index:index+l])
+                    about_i += 1
+                    index += l
+            return params
+
+        # numerically minimize objective function
+        # minimizing = optimize.minimize(full_objective, np.array(init_params), bounds=param_bounds)
+        minimizing = optimize.dual_annealing(full_objective, bounds=param_bounds)
+        best_params = flat_array_to_params_dict(minimizing.x)
+
+        best_p_xmi = all_probas(best_params)
+        self.weights = calculate_weights(best_p_xmi, minimal_weight=1e-6)
+        print(f"Achieved best weights: {self.weights}")
+
+        return best_params
+
+
+
+
+def numerical_argmax_func(observed_vector, model_qs, probafunc, param_bounds):
+    def objective(params):
+        a = model_qs * np.log(probafunc(observed_vector, params) + 1e-6)
+
+        return -np.sum(a[~np.isnan(a)])
+
+    minimizing = optimize.dual_annealing(objective, param_bounds)
+    return minimizing
+
+
+def check_bounds(b, observed):
+    if b is not None:
+        return b
+
+    return 0 + 10e-6, max(observed)
 
 
 class WeightedProbabilityModel(ProbabilityModel):
 
     def __init__(self, z, metrics, get_params_from_matched=False):
         super().__init__(z, metrics, get_params_from_matched)
-        self.parameters = [[1, *x] for x in self.parameters]
-
+        # self.parameters = [[1, *x] for x in self.parameters]
 
     def calculate_probability(self, observed_values, pseudocount=10e-10):
         # Pr[observed | params, z] for every observation
@@ -89,7 +261,7 @@ class WeightedProbabilityModel(ProbabilityModel):
         result = np.zeros(len(observed_values))
         for i in range(observed_values.shape[1]):
             p_func = self.optimization_info[i]['proba']
-            param = self.parameters[i][1:]  # without weight
+            param = self.parameters[i]  # [1:]  # without weight
             x = pd.Series(observed_values[:, i])
             p = np.log(
                 x.swifter.apply(lambda xi: p_func(xi, param) + pseudocount)
@@ -100,36 +272,43 @@ class WeightedProbabilityModel(ProbabilityModel):
 
         return np.exp(result)
 
-
     # does not require to do the theoretical gradient calculating, proceeds numerically
     # the bounds could be a weakness - TODO maybe redefine?
     def argmax_for_parameters(self, model_qs, observed_values):
-        print("running argmax for params in weighted proba model")
+        print(f"running argmax for params in weighted proba model {self.identificator}")
+
         new_parameters = []
         for i, optimizer in enumerate(self.optimization_info):
             p_func = optimizer['proba']
             bounds = optimizer['params_bounds']
-            new_theta = argmax_for_weighted_proba(observed_values[:, i], model_qs, p_func, bounds)
-            # params bounds definition
-            new_parameters.append(new_theta)
+            bounds = [check_bounds(b, observed_values[:, i]) for b in bounds]
+            solution = numerical_argmax_func(observed_values[:, i], model_qs, p_func, bounds)
+            # parameters of the function
+            new_parameters.append(solution.x)
 
         return new_parameters
 
 
-#  assumes metrics are independent
+#  assumes metrics are conditionally independent
 class EMOptimizer:
     # https://courses.csail.mit.edu/6.867/wiki/images/b/b5/Em_tutorial.pdf
-    def __init__(self, possible_latent, priors, models):
+    def __init__(self, possible_latent, priors, models, weighted=False):
         self.z = possible_latent
-        self.models = models  # dictionary z: model[z]
+        # self.models = models  # dictionary z: model[z]
+        if weighted:
+            self.models = WeightedModelEnsemble(models)
+        else:
+            self.models = ProbabilityModelEnsemble(models)
         self.priors = priors  # dictionary z: prior[z]
+        self.weighted = weighted
 
     def __e_step(self, observed_values):
         print("E-step started")
         qs = {}
         # for every z, calculate PRIOR[z] * Pr[x | z, params]
         for z in self.z:
-            q = self.models[z].calculate_probability(observed_values) * self.priors[z]
+            #  q = self.models[z].calculate_probability(observed_values) * self.priors[z]
+            q = self.models.calculate_probability(z, observed_values) * self.priors[z]
             qs[z] = q
 
         # bottom = sum PRIOR[z] * Pr[x | z, params] over all z
@@ -153,9 +332,10 @@ class EMOptimizer:
             # p = np.fmin(1 - thr, p)
             new_priors[z] = p
 
-        new_theta = {}
-        for z in self.z:
-            new_theta[z] = self.models[z].argmax_for_parameters(qs[z], observed_values)
+        # new_theta = {}
+        # for z in self.z:
+        #     new_theta[z] = self.models[z].argmax_for_parameters(qs[z], observed_values)
+        new_theta = self.models.argmax_params(qs, observed_values, new_priors)
 
         print("M-step done")
         return new_priors, new_theta
@@ -214,7 +394,7 @@ class EMOptimizer:
         # return True
 
     def optimize(self, observed_values, max_step, tolerance, parameter_colector=None):
-        old_parameters = [self.models[z].parameters for z in self.z]
+        old_parameters = [self.models.get_models()[z].parameters for z in self.z]
         old_parameters.extend([self.priors[z] for z in self.z])
         self.__record(old_parameters, colector=parameter_colector)
 
@@ -224,9 +404,10 @@ class EMOptimizer:
 
             self.priors = new_priors
             for z in self.z:
-                self.models[z].set_parameters(new_theta[z])
+                # self.models[z].set_parameters(new_theta[z])
+                self.models.set_params(new_theta[z], z)
 
-            new_parameters = [self.models[z].parameters for z in self.z]
+            new_parameters = [self.models.get_models()[z].parameters for z in self.z]
             new_parameters.extend([self.priors[z] for z in self.z])
 
             print(f"ITERATION {i}")
@@ -242,4 +423,4 @@ class EMOptimizer:
             self.__record(new_parameters, colector=parameter_colector)
             old_parameters = new_parameters
 
-        return self.models  # recorded_parameters
+        return self.models.get_models()  # recorded_parameters

@@ -140,20 +140,20 @@ class GCcontent(Metric):
 
         # TODO set params - should be poisson/exponentials or sth like that
         super().define_optimalization_params(
-            # 1
-            # dict(argmax=distributions["univariate_gaussian"]["argmax"],
-            #      proba=distributions["univariate_gaussian"]["proba"],
-            #      params_bounds=[(0, int(10e8)), (0, int(10e8))],
-            #      initial_parameters=[50, 5]),
+           # 1
+            dict(argmax=distributions["univariate_gaussian"]["argmax"],
+                 proba=distributions["univariate_gaussian"]["proba"],
+                 params_bounds=[None, (0.5, 1e8)],
+                 initial_parameters=[5, 5]),
             # # 0
             # dict(argmax=distributions["univariate_gaussian"]["argmax"],
             #      proba=distributions["univariate_gaussian"]["proba"],
             #      params_bounds=[(0, int(10e8)), (0, int(10e8))],
             #      initial_parameters=[100, 5])
-            dict(argmax=distributions["univariate_geometric"]["argmax"],
-                 proba=distributions["univariate_geometric"]["proba"],
-                 params_bounds=[(10e-10, 1-10e-10)],
-                 initial_parameters=[0.01]),
+            # dict(argmax=distributions["univariate_geometric"]["argmax"],
+            #      proba=distributions["univariate_geometric"]["proba"],
+            #      params_bounds=[(0.01, 0.99)],
+            #      initial_parameters=[0.01]),
             # 0
             dict(argmax=distributions["univariate_uniform"]["argmax"],
                  proba=distributions["univariate_uniform"]["proba"],
@@ -183,8 +183,8 @@ class ShapeMetric(Metric):
             # 1
             dict(argmax=distributions["univariate_geometric"]["argmax"],
                  proba=distributions["univariate_geometric"]["proba"],
-                 params_bounds=[(10e-10, 1-10e-10)],
-                 initial_parameters=[0.01]),
+                 params_bounds=[(0.01,0.99)],
+                 initial_parameters=[0.1]),
             # 0
             dict(argmax=distributions["univariate_uniform"]["argmax"],
                  proba=distributions["univariate_uniform"]["proba"],
