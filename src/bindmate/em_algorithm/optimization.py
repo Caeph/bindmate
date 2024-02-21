@@ -140,7 +140,7 @@ class WeightedModelEnsemble(ProbabilityModelEnsemble):
             w_avg = np.sum((p_xi_given_mz * new_priors[z]) * np.log(
                 p_xi_given_mz / p_xi
             ))
-            bottom_entropy = np.sum(p_xi * np.log(p_xi))
+            bottom_entropy = np.sum(p_xi * np.log(p_xi))+pseudocount
 
             return w_avg / bottom_entropy
 

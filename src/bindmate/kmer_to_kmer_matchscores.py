@@ -96,7 +96,7 @@ def __optimize_arbitrary_no_weighted_models(no_matched_models, all_ranks, full_m
 
 
 def __optimize_arbitrary_no_weighted_models_bootstrap(no_matched_models, all_ranks, full_metrics, alpha=0.1,
-                                            priors=None, max_step=10, tolerance=0.0001, em_params_file=None,
+                                                      priors=None, max_step=10, tolerance=0.0001, em_params_file=None,
                                                       bootstrap_no=5, bootstrap_size=int(1e5)):
     mean_mismatch_proba, mean_match_proba = np.zeros(len(all_ranks)), np.zeros(len(all_ranks))
     l = len(all_ranks)
@@ -358,7 +358,7 @@ def __calculate_kmer_metrics(unique_kmers, full_metrics, cpus, save_results):
 
 def __calculate_kmer_to_kmer_matchscores_multimodel(no_matched_models, unique_kmers, kmers_mapped_to_sqs,
                                                     full_metrics, cpus, save_results, preselection_part,
-                                                    max_em_step, em_params_file, min_size_to_bootstrap=int(1e3),
+                                                    max_em_step, em_params_file, min_size_to_bootstrap=int(1e4),
                                                     bootstrap_p=0.1):
     start = time.time()
     pairwise_ranks, kmer_combinations = __calculate_kmer_metrics(unique_kmers, full_metrics, cpus, save_results)
@@ -373,15 +373,15 @@ def __calculate_kmer_to_kmer_matchscores_multimodel(no_matched_models, unique_km
     #                                                                       max_step=max_em_step,
     #                                                                       em_params_file=em_params_file)
 
-    bs_size = int(np.fmin(len(kmer_combinations)*bootstrap_p, min_size_to_bootstrap))
+    bs_size = int(np.fmin(len(kmer_combinations) * bootstrap_p, min_size_to_bootstrap))
+    print(f"Bootstrapping size was set as {bs_size}")
     # if bs_size < 1e4:
     #     bs_size = 1e4
     mismatch_proba, match_proba = __optimize_arbitrary_no_weighted_models_bootstrap(no_matched_models, pairwise_ranks,
-                                                                          full_metrics,
-                                                                          max_step=max_em_step,
-                                                                          em_params_file=em_params_file,
-                                                                          bootstrap_size=bs_size)
-
+                                                                                    full_metrics,
+                                                                                    max_step=max_em_step,
+                                                                                    em_params_file=em_params_file,
+                                                                                    bootstrap_size=bs_size)
 
     print(f"Probabilities calculated, optimization complete: {time.time() - start}")
     start = time.time()

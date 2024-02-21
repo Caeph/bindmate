@@ -333,7 +333,7 @@ class HocomocoMSE(PFMmetric):
             # 0
             dict(argmax=distributions["univariate_uniform"]["argmax"],
                  proba=distributions["univariate_uniform"]["proba"],
-                 params_bounds=[(0, int(10e8)), (0, int(10e8))],
+                 params_bounds=[(0, int(10e8))],
                  initial_parameters=[1000])
         )
 

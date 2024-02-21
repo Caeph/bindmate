@@ -3,10 +3,10 @@ from kmer_to_kmer_matchscores import PairingResults
 
 
 def main():
-    # inputfile = "../../small_unbalanced_test_dataset_randombg.fasta"  # swift, for general functionality testing
+    inputfile = "../../small_unbalanced_test_dataset_randombg.fasta"  # swift, for general functionality testing
     # inputfile = "../../fake_sequence_less_blurred_0_10_250_100_100.fasta"
     #
-    inputfile = "../../biodata_CTCF_TP53_l:300_n:200:200.fasta"
+    # inputfile = "../../biodata_CTCF_TP53_l:300_n:200:200.fasta"
     out = "../../test_results_biodata_dual_annealing"
     tool = PairingProbabilityCalculator(24,
                                         [
