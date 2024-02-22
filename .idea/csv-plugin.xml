@@ -10,6 +10,13 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="/src/bindmate/test_results_simplescript/seq2seq_results.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="/test_results_match_probabilities/metric_ranks.csv">
           <value>
             <Attribute>

@@ -55,7 +55,7 @@ class PairingProbabilityCalculator:
         optimized = calculate_kmer_to_kmer_matchscores(sequences, self.k, self.metrics,
                                                        self.background,
                                                        save_results=os.path.join(
-                                                        self.material_saving_dir, "metric_ranks.csv"
+                                                        self.material_saving_dir, "metric_ranks.csv.gz"
                                                        ), em_params_file=os.path.join(
                                                         self.material_saving_dir, "recorded_parameters.csv"
                                                        ), no_matched_models=self.no_matched_models,
@@ -88,5 +88,5 @@ class AnalyticalTool:
             item = SeqToSeqPairing.load(line)
             seq2seq.append(item)
 
-        info_ranks = pd.read_csv(os.path.join(dirname, "metric_ranks.csv"))
+        info_ranks = pd.read_csv(os.path.join(dirname, "metric_ranks.csv.gz"))
         return AnalyticalTool(pairing_result, seq2seq, info_ranks)

@@ -97,7 +97,7 @@ def __optimize_arbitrary_no_weighted_models(no_matched_models, all_ranks, full_m
 
 def __optimize_arbitrary_no_weighted_models_bootstrap(no_matched_models, all_ranks, full_metrics, alpha=0.1,
                                                       priors=None, max_step=10, tolerance=0.0001, em_params_file=None,
-                                                      bootstrap_no=5, bootstrap_size=int(1e5)):
+                                                      bootstrap_no=3, bootstrap_size=int(1e5)):
     mean_mismatch_proba, mean_match_proba = np.zeros(len(all_ranks)), np.zeros(len(all_ranks))
     l = len(all_ranks)
 
