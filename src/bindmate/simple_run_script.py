@@ -28,7 +28,7 @@ if __name__ == '__main__':
                                         background_type="sampled",
                                         background_size=1500,
                                         max_em_step=20,
-                                        preselection_part=0.5,
+                                        preselection_part=0.25,
                                         no_matched_models=2,
                                         background_source_file=os.path.join(script_dir,
                                                                             'backgrounds/upstream2000.fa'),
