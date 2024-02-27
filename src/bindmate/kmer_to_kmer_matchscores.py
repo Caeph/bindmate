@@ -97,7 +97,7 @@ def __optimize_arbitrary_no_weighted_models(no_matched_models, all_ranks, full_m
 
 def __optimize_arbitrary_no_weighted_models_bootstrap(no_matched_models, all_ranks, full_metrics, alpha=0.1,
                                                       priors=None, max_step=10, tolerance=0.001, em_params_file=None,
-                                                      bootstrap_no=3, bootstrap_size=int(1e5)):
+                                                      bootstrap_no=3, bootstrap_size=int(5e5)):
     mean_mismatch_proba, mean_match_proba = np.zeros(len(all_ranks)), np.zeros(len(all_ranks))
     l = len(all_ranks)
 
@@ -194,7 +194,7 @@ def __optimize_arbitrary_no_models_inner(no_matched_models, matched_models_z, al
 
 
 def __optimize_arbitrary_no_models(no_matched_models, all_ranks, full_metrics, alpha=0.1,
-                                   priors=None, max_step=10, tolerance=0.0001, em_params_file=None, weighted=False):
+                                   priors=None, max_step=10, tolerance=0.001, em_params_file=None, weighted=False):
     unmatched = ProbabilityModel(0, full_metrics)
     matched_models_z = list(range(1, no_matched_models + 1))
     all_models = {z: ProbabilityModel(z, full_metrics, get_params_from_matched=True) for z in matched_models_z}
@@ -358,8 +358,8 @@ def __calculate_kmer_metrics(unique_kmers, full_metrics, cpus, save_results):
 
 def __calculate_kmer_to_kmer_matchscores_multimodel(no_matched_models, unique_kmers, kmers_mapped_to_sqs,
                                                     full_metrics, cpus, save_results, preselection_part,
-                                                    max_em_step, em_params_file, min_size_to_bootstrap=int(1e5),
-                                                    bootstrap_p=0.2):
+                                                    max_em_step, em_params_file, min_size_to_bootstrap=int(5e5),
+                                                    bootstrap_p=0.25):
     start = time.time()
     pairwise_ranks, kmer_combinations = __calculate_kmer_metrics(unique_kmers, full_metrics, cpus, save_results)
 

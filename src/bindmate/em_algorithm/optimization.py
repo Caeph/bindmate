@@ -134,7 +134,6 @@ class WeightedModelEnsemble(ProbabilityModelEnsemble):
         # one call of numerical solving U
         def KL_divergence_weight(z, m, p_xmi, pseudocount=1e-9):
             p_xi = np.sum(p_xmi[:, :, m], axis=0) + pseudocount
-
             p_xi_given_mz = p_xmi[z, :, m]
 
             w_avg = np.sum((p_xi_given_mz * new_priors[z]) * np.log(
@@ -148,7 +147,6 @@ class WeightedModelEnsemble(ProbabilityModelEnsemble):
             # xmi calculation
             p_xmi = np.stack([np.zeros_like(observed_values) for z in self.models.keys()]).astype(float)
             for m in range(observed_values.shape[1]):
-                # x = pd.Series(observed_values[:, m])
                 x = pd.Series(observed_values[:, m])
                 for z in self.models.keys():
                     model = self.models[z]
