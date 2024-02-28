@@ -137,7 +137,7 @@ class WeightedModelEnsemble(ProbabilityModelEnsemble):
             p_xi_given_mz = p_xmi[z, :, m]
 
             w_avg = np.sum((p_xi_given_mz * new_priors[z]) * np.log(
-                (p_xi_given_mz / p_xi) + pseudocount
+                (p_xi_given_mz / (p_xi + pseudocount))
             ))
             bottom_entropy = np.sum(p_xi * np.log(p_xi))+pseudocount
 
@@ -216,6 +216,7 @@ class WeightedModelEnsemble(ProbabilityModelEnsemble):
             return params
 
         # numerically minimize objective function
+        # TODO this might need speeding up
         minimizing = optimize.minimize(full_objective, np.array(init_params), bounds=param_bounds)
         # minimizing = optimize.dual_annealing(full_objective, bounds=param_bounds)
         best_params = flat_array_to_params_dict(minimizing.x)
