@@ -358,8 +358,8 @@ def __calculate_kmer_metrics(unique_kmers, full_metrics, cpus, save_results):
 
 def __calculate_kmer_to_kmer_matchscores_multimodel(no_matched_models, unique_kmers, kmers_mapped_to_sqs,
                                                     full_metrics, cpus, save_results, preselection_part,
-                                                    max_em_step, em_params_file, min_size_to_bootstrap=int(5e5),
-                                                    bootstrap_p=0.25):
+                                                    max_em_step, em_params_file, min_size_to_bootstrap=int(1e4),
+                                                    bootstrap_p=0.1):
     start = time.time()
     pairwise_ranks, kmer_combinations = __calculate_kmer_metrics(unique_kmers, full_metrics, cpus, save_results)
 
