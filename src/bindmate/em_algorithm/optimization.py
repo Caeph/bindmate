@@ -1,6 +1,9 @@
+import warnings
+
 import numpy as np
 import pandas as pd
 from scipy import optimize
+from tqdm import tqdm
 
 
 def random_shift(initial_params):
@@ -75,7 +78,7 @@ class ProbabilityModel:
 #     return minimizing.x
 
 class ProbabilityModelEnsemble:
-    def __init__(self, models):
+    def __init__(self, models, ident="MODEL"):
         self.models = models
 
     def calculate_probability(self, z, observed_values):
@@ -223,7 +226,7 @@ class WeightedModelEnsemble(ProbabilityModelEnsemble):
 
         best_p_xmi = all_probas(best_params)
         self.weights = calculate_weights(best_p_xmi, minimal_weight=1e-6)
-        print(f"Achieved best weights: {self.weights}")
+        # print(f"Achieved best weights: {self.weights}")
 
         return best_params
 
@@ -274,7 +277,7 @@ class WeightedProbabilityModel(ProbabilityModel):
     # does not require to do the theoretical gradient calculating, proceeds numerically
     # the bounds could be a weakness - TODO maybe redefine?
     def argmax_for_parameters(self, model_qs, observed_values):
-        print(f"running argmax for params in weighted proba model {self.identificator}")
+        # print(f"running argmax for params in weighted proba model {self.identificator}")
 
         new_parameters = []
         for i, optimizer in enumerate(self.optimization_info):
@@ -302,7 +305,7 @@ class EMOptimizer:
         self.weighted = weighted
 
     def __e_step(self, observed_values):
-        print("E-step started")
+        # print("E-step started")
         qs = {}
         # for every z, calculate PRIOR[z] * Pr[x | z, params]
         for z in self.z:
@@ -319,11 +322,11 @@ class EMOptimizer:
         for z in self.z:
             qs[z] = qs[z] / bottom
 
-        print("E-step done")
+        # print("E-step done")
         return qs
 
     def __m_step(self, qs, observed_values, thr=0.001):
-        print("M-step started")
+        # print("M-step started")
         new_priors = {}
         for z in self.z:
             p = np.mean(qs[z])
@@ -336,7 +339,7 @@ class EMOptimizer:
         #     new_theta[z] = self.models[z].argmax_for_parameters(qs[z], observed_values)
         new_theta = self.models.argmax_params(qs, observed_values, new_priors)
 
-        print("M-step done")
+        # print("M-step done")
         return new_priors, new_theta
 
     def __record(self, parameters, colector, sep=';', subsep=';'):
@@ -392,34 +395,37 @@ class EMOptimizer:
         #
         # return True
 
-    def optimize(self, observed_values, max_step, tolerance, parameter_colector=None):
+    def optimize(self, observed_values, max_step, tolerance,
+                 parameter_colector=None, identificator=""):
         old_parameters = [self.models.get_models()[z].parameters for z in self.z]
         old_parameters.extend([self.priors[z] for z in self.z])
         self.__record(old_parameters, colector=parameter_colector)
 
-        for i in range(max_step):
-            qs = self.__e_step(observed_values)
-            new_priors, new_theta = self.__m_step(qs, observed_values)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            for i in range(max_step):
+                qs = self.__e_step(observed_values)
+                new_priors, new_theta = self.__m_step(qs, observed_values)
 
-            self.priors = new_priors
-            for z in self.z:
-                # self.models[z].set_parameters(new_theta[z])
-                self.models.set_params(new_theta[z], z)
+                self.priors = new_priors
+                for z in self.z:
+                    # self.models[z].set_parameters(new_theta[z])
+                    self.models.set_params(new_theta[z], z)
 
-            new_parameters = [self.models.get_models()[z].parameters for z in self.z]
-            new_parameters.extend([self.priors[z] for z in self.z])
+                new_parameters = [self.models.get_models()[z].parameters for z in self.z]
+                new_parameters.extend([self.priors[z] for z in self.z])
 
-            print(f"ITERATION {i}")
-            print(f"OLD: {old_parameters}")
-            print(f"NEW: {new_parameters}")
+                print(f"{identificator}: ITERATION {i}")
+                print(f"{identificator}: OLD: {old_parameters}")
+                print(f"{identificator}: NEW: {new_parameters}")
 
-            convergence = self.check_convergence(old_parameters, new_parameters, tolerance)
-            if convergence:
-                print("CONVERGENCE")
-                break
+                convergence = self.check_convergence(old_parameters, new_parameters, tolerance)
+                if convergence:
+                    # print("CONVERGENCE")
+                    break
 
-            # recorded_parameters.append(old_parameters)
-            self.__record(new_parameters, colector=parameter_colector)
-            old_parameters = new_parameters
+                # recorded_parameters.append(old_parameters)
+                self.__record(new_parameters, colector=parameter_colector)
+                old_parameters = new_parameters
 
         return self.models.get_models()  # recorded_parameters

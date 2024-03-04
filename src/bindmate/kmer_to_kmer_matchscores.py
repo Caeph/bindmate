@@ -1,20 +1,11 @@
+import multiprocessing
 import os
 import time
-
-import numpy as np
-import pandas as pd
-
 from kmer.make_kmers import *
 from predefined_functions import initialize_available_functions
-# from itertools import combinations
 from joblib import cpu_count
 from em_algorithm.optimization import *
 import swifter
-
-
-# import multiprocessing
-
-# import dask.array as da
 
 
 def __read_unique_kmers(input_sqs, k):
@@ -38,9 +29,6 @@ def __read_unique_kmers(input_sqs, k):
 
 
 def __calculate_all_to_all_metric(kmer_combinations, unique_kmers, metric, cpus):
-    # with parallel_config(backend='threading', n_jobs=cpus):
-    #     metric_values = Parallel()(
-    #         delayed(metric.compare_kmers)(unique_kmers[i1], unique_kmers[i2]) for i1, i2 in kmer_combinations)
     def calculate(r):
         i1, i2 = r
         return metric.compare_kmers(i1, i2)
@@ -93,6 +81,80 @@ def __optimize_arbitrary_no_weighted_models(no_matched_models, all_ranks, full_m
                                                                        alpha=alpha,
                                                                        priors=priors)
     return mismatch_proba, match_proba
+
+
+def __inner_bootstrap_optimize(inner_bootstrap_params):
+    ident, bootstrapped_ranks, all_ranks, chosen_features, all_models, matched_models_z, priors, max_step, tolerance = inner_bootstrap_params
+
+    em_algo = EMOptimizer(
+        possible_latent=[0, *matched_models_z],
+        priors=priors,
+        models=all_models,
+        weighted=True
+    )
+    print(f"{ident}: Initialization complete...")
+    models = em_algo.optimize(bootstrapped_ranks, max_step, tolerance, identificator=ident)
+    print(f"{ident}: Calculating final probability")
+
+    probas_0 = models[0].calculate_probability(all_ranks[:, chosen_features])
+    mismatch_proba = probas_0
+
+    # this is a logical or
+    match_proba = np.zeros_like(probas_0)
+    for z in matched_models_z:
+        match_proba = models[z].calculate_probability(all_ranks[:, chosen_features]) + match_proba
+
+    return mismatch_proba, match_proba
+
+
+def __optimize_arbitrary_no_weighted_models_bootstrap_points_and_metrics(no_matched_models, all_ranks, full_metrics,
+                                                                         alpha=0.1, priors=None, max_step=10,
+                                                                         tolerance=0.001, em_params_file=None,
+                                                                         bootstrap_size=int(5e5), bootstrap_no=3,
+                                                                         feature_size=6, threads=8):
+    mean_mismatch_proba, mean_match_proba = np.zeros(len(all_ranks)), np.zeros(len(all_ranks))
+    l = len(all_ranks)
+    f = all_ranks.shape[1]
+
+    if l < bootstrap_size:
+        return __optimize_arbitrary_no_weighted_models(no_matched_models, all_ranks, full_metrics,
+                                                       alpha, priors, max_step, tolerance, em_params_file)
+    print(f"Bootstrapping {bootstrap_no} times to size {bootstrap_size} datapoints and {feature_size} features.")
+
+    bootstrapped_inputs = []
+    for i in range(bootstrap_no):
+        chosen_features = np.random.choice(f, feature_size, replace=False)
+        bootstrapped_ranks = all_ranks[np.random.choice(l, bootstrap_size, replace=False), :]
+        bootstrapped_ranks = bootstrapped_ranks[:, chosen_features]
+
+        unmatched = ProbabilityModel(0, full_metrics)
+        matched_models_z = list(range(1, no_matched_models + 1))
+        all_models = {z: ProbabilityModel(z, full_metrics, get_params_from_matched=True) for z in matched_models_z}
+        all_models[0] = unmatched
+
+        if priors is None:
+            unif = (alpha / no_matched_models)
+            priors = {z: unif + np.random.uniform(-unif / 2, unif / 2) for z in matched_models_z}
+            priors[0] = 1 - np.sum([priors[z] for z in matched_models_z])
+
+        strap = [i, bootstrapped_ranks, all_ranks, chosen_features, all_models,
+                  matched_models_z, priors, max_step, tolerance]
+        bootstrapped_inputs.append(strap)
+
+    with multiprocessing.Pool(threads) as pool:
+        results = pool.imap(__inner_bootstrap_optimize, bootstrapped_inputs)
+        results = list(results)
+
+    for item in results:
+        mismatch_proba, match_proba = item
+        # add to bulk
+        mean_mismatch_proba = mean_mismatch_proba + mismatch_proba
+        mean_match_proba = mean_match_proba + match_proba
+
+    mean_mismatch_proba = mean_mismatch_proba / bootstrap_no
+    mean_match_proba = mean_match_proba / bootstrap_no
+
+    return mean_mismatch_proba, mean_match_proba
 
 
 def __optimize_arbitrary_no_weighted_models_bootstrap(no_matched_models, all_ranks, full_metrics, alpha=0.1,
@@ -276,20 +338,6 @@ class PairingResults:
     def get_all_seq_indices(self):
         return self.mapped_kmers_df['input_sequence_index'].unique()
 
-    # def calculate_for_seq_index_pair(self, seqi1, seqi2):
-    #     # THIS IS SLOW!!!!!
-    #     seqi1_df = self.mapped_kmers_df[self.mapped_kmers_df['input_sequence_index'] == seqi1]
-    #     seqi2_df = self.mapped_kmers_df[self.mapped_kmers_df['input_sequence_index'] == seqi2]
-    #
-    #     cross_df = pd.merge(seqi1_df, seqi2_df, how='cross', suffixes=("_1", "_2"))
-    #     pairs = pd.merge(cross_df, self.available_combinations,
-    #                      left_on=['kmer_index_1', "kmer_index_2"], right_on=["kmer_i1", "kmer_i2"],
-    #                      how="inner").drop(
-    #         columns=["kmer_i1", "kmer_i2"])
-    #
-    #     pairs['probability'] = pairs['combination_index'].apply(lambda i: self.probas_1[i])
-    #     return pairs
-
     def save(self, path):
         os.makedirs(path, exist_ok=True)
         self.available_combinations.to_csv(os.path.join(path, "available_combinations.csv.gz"),
@@ -359,27 +407,29 @@ def __calculate_kmer_metrics(unique_kmers, full_metrics, cpus, save_results):
 def __calculate_kmer_to_kmer_matchscores_multimodel(no_matched_models, unique_kmers, kmers_mapped_to_sqs,
                                                     full_metrics, cpus, save_results, preselection_part,
                                                     max_em_step, em_params_file, min_size_to_bootstrap=int(1e4),
-                                                    bootstrap_p=0.1):
-    start = time.time()
+                                                    bootstrap_p=0.1, feature_no=6, bootstrap_no=10):
     pairwise_ranks, kmer_combinations = __calculate_kmer_metrics(unique_kmers, full_metrics, cpus, save_results)
 
     print(f"Starting optimization with {no_matched_models}...")
     start = time.time()
-    # mismatch_proba, match_proba = __optimize_arbitrary_no_models(no_matched_models, pairwise_ranks, full_metrics,
-    #                                                             max_step=max_em_step, em_params_file=em_params_file)
-
-    # mismatch_proba, match_proba = __optimize_arbitrary_no_weighted_models(no_matched_models, pairwise_ranks,
-    #                                                                       full_metrics,
-    #                                                                       max_step=max_em_step,
-    #                                                                       em_params_file=em_params_file)
 
     bs_size = int(np.fmin(len(kmer_combinations) * bootstrap_p, min_size_to_bootstrap))
-    print(f"Bootstrapping size was set as {bs_size}")
-    mismatch_proba, match_proba = __optimize_arbitrary_no_weighted_models_bootstrap(no_matched_models, pairwise_ranks,
-                                                                                    full_metrics,
-                                                                                    max_step=max_em_step,
-                                                                                    em_params_file=em_params_file,
-                                                                                    bootstrap_size=bs_size)
+    print(f"Bootstrapping size was set as {bs_size} data points")
+    # mismatch_proba, match_proba = __optimize_arbitrary_no_weighted_models_bootstrap(no_matched_models, pairwise_ranks,
+    #                                                                                 full_metrics,
+    #                                                                                 max_step=max_em_step,
+    #                                                                                 em_params_file=em_params_file,
+    #                                                                                 bootstrap_size=bs_size)
+    mismatch_proba, match_proba = __optimize_arbitrary_no_weighted_models_bootstrap_points_and_metrics(
+        no_matched_models,
+        pairwise_ranks,
+        full_metrics,
+        max_step=max_em_step,
+        em_params_file=em_params_file,
+        bootstrap_size=bs_size,
+        feature_size=feature_no,
+        bootstrap_no=bootstrap_no
+    )
 
     print(f"Probabilities calculated, optimization complete: {time.time() - start}")
     start = time.time()

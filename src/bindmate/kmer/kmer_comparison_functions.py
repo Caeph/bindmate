@@ -8,6 +8,7 @@ import pyProBound
 from tqdm import tqdm
 import os
 import rpy2.robjects as robjects
+
 robjects.r('library(BiocManager)')
 
 script_dir = os.path.split(os.path.realpath(__file__))[0]
@@ -54,18 +55,42 @@ def uniform_argmax(observed_vector, model_qs):
     return [np.max(observed_vector)]
 
 
+def apply_gaussian_argmax(q, x):
+    return gaussian_argmax(x, q)
+
+
+def apply_geometric_argmax(q, x):
+    return geometric_argmax(x, q)
+
+
+def apply_uniform_argmax(q, x):
+    return uniform_argmax(x, q)
+
+
+def apply_gaussian_proba(val, params):
+    return stats.norm.pdf(val, params[0], params[1])
+
+
+def apply_geometric_proba(val, params):
+    return stats.geom.pmf(val, params[0])
+
+
+def apply_uniform_proba(val, params):
+    return 1 / params[0]
+
+
 distributions = {
     "univariate_gaussian": dict(
-        argmax=lambda q, x: gaussian_argmax(x, q),
-        proba=lambda val, params: stats.norm.pdf(val, params[0], params[1])
+        argmax=apply_gaussian_argmax,
+        proba=apply_gaussian_proba
     ),
     "univariate_geometric": dict(
-        argmax=lambda q, x: geometric_argmax(x, q),
-        proba=lambda val, params: stats.geom.pmf(val, params[0]),
+        argmax=apply_geometric_argmax,
+        proba=apply_geometric_proba,
     ),
     "univariate_uniform": dict(
-        argmax=lambda q, x: uniform_argmax(x, q),
-        proba=lambda val, params: 1 / params[0]
+        argmax=apply_uniform_argmax,
+        proba=apply_uniform_proba,
     )
 }
 
@@ -140,7 +165,7 @@ class GCcontent(Metric):
 
         # TODO set params - should be poisson/exponentials or sth like that
         super().define_optimalization_params(
-           # 1
+            # 1
             dict(argmax=distributions["univariate_gaussian"]["argmax"],
                  proba=distributions["univariate_gaussian"]["proba"],
                  params_bounds=[None, (0.5, 1e8)],
@@ -183,7 +208,7 @@ class ShapeMetric(Metric):
             # 1
             dict(argmax=distributions["univariate_geometric"]["argmax"],
                  proba=distributions["univariate_geometric"]["proba"],
-                 params_bounds=[(0.01,0.99)],
+                 params_bounds=[(0.01, 0.99)],
                  initial_parameters=[0.1]),
             # 0
             dict(argmax=distributions["univariate_uniform"]["argmax"],
@@ -205,14 +230,14 @@ class ShapeMetric(Metric):
         result = robjects.r('getShape')(temp_fasta_name)
 
         def strip_nan(array):
-            good = np.where(~np.isnan(array[0,:]))[0]
+            good = np.where(~np.isnan(array[0, :]))[0]
             return array[:, good]
 
         pyresult = {name: np.array(val) for name, val in zip(result.names, list(result))}
         self.shape_values = strip_nan(pyresult[self.shape_parameter])
         os.remove(temp_fasta_name)
         for name in pyresult.keys():
-            os.remove(temp_fasta_name+f".{name}")
+            os.remove(temp_fasta_name + f".{name}")
 
     def compare_kmers(self, i1, i2):
         one, two = self.shape_values[i1, :], self.shape_values[i2, :]
@@ -328,7 +353,7 @@ class HocomocoMSE(PFMmetric):
             # 1
             dict(argmax=distributions["univariate_geometric"]["argmax"],
                  proba=distributions["univariate_geometric"]["proba"],
-                 params_bounds=[(10e-10, 1-10e-10)],
+                 params_bounds=[(10e-10, 1 - 10e-10)],
                  initial_parameters=[0.01]),
             # 0
             dict(argmax=distributions["univariate_uniform"]["argmax"],
@@ -415,7 +440,7 @@ class ProBoundHumanMSE(ProBoundMetric):
             # 1
             dict(argmax=distributions["univariate_geometric"]["argmax"],
                  proba=distributions["univariate_geometric"]["proba"],
-                 params_bounds=[(10e-10, 1-10e-10)],
+                 params_bounds=[(10e-10, 1 - 10e-10)],
                  initial_parameters=[0.01]),
             # 0
             dict(argmax=distributions["univariate_uniform"]["argmax"],
