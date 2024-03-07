@@ -94,17 +94,8 @@ def __inner_bootstrap_optimize(inner_bootstrap_params):
     )
     print(f"{ident}: Initialization complete...")
     models = em_algo.optimize(bootstrapped_ranks, max_step, tolerance, identificator=ident)
-    print(f"{ident}: Calculating final probability")
 
-    probas_0 = models[0].calculate_probability(all_ranks[:, chosen_features])
-    mismatch_proba = probas_0
-
-    # this is a logical or
-    match_proba = np.zeros_like(probas_0)
-    for z in matched_models_z:
-        match_proba = models[z].calculate_probability(all_ranks[:, chosen_features]) + match_proba
-
-    return mismatch_proba, match_proba
+    return models, chosen_features, matched_models_z
 
 
 def __optimize_arbitrary_no_weighted_models_bootstrap_points_and_metrics(no_matched_models, all_ranks, full_metrics,
@@ -142,12 +133,29 @@ def __optimize_arbitrary_no_weighted_models_bootstrap_points_and_metrics(no_matc
         bootstrapped_inputs.append(strap)
 
     with multiprocessing.Pool(threads) as pool:
-        results = pool.imap(__inner_bootstrap_optimize, bootstrapped_inputs)
-        results = list(results)
+        try:
+            trained_models = pool.map(__inner_bootstrap_optimize, bootstrapped_inputs)
+            trained_models = list(trained_models)
+        finally:
+            print("All models are trained, multiprocessing cleanup")
+            pool.close()
+            pool.join()
+    # trained_models = list(map(__inner_bootstrap_optimize, bootstrapped_inputs))
+    print("Pool closed.")
 
-    for item in results:
-        mismatch_proba, match_proba = item
-        # add to bulk
+    # results = []
+    print("Finalizing probabilities...")
+    for ident, item in enumerate(trained_models):
+        print(f"{ident}: Calculating final probability")
+        trained_model, chosen_features, matched_models_z = item
+        probas_0 = trained_model[0].calculate_probability(all_ranks[:, chosen_features])
+        mismatch_proba = probas_0
+
+        # this is a logical or
+        match_proba = np.zeros_like(probas_0)
+        for z in matched_models_z:
+            match_proba = trained_model[z].calculate_probability(all_ranks[:, chosen_features]) + match_proba
+
         mean_mismatch_proba = mean_mismatch_proba + mismatch_proba
         mean_match_proba = mean_match_proba + match_proba
 
@@ -407,7 +415,7 @@ def __calculate_kmer_metrics(unique_kmers, full_metrics, cpus, save_results):
 def __calculate_kmer_to_kmer_matchscores_multimodel(no_matched_models, unique_kmers, kmers_mapped_to_sqs,
                                                     full_metrics, cpus, save_results, preselection_part,
                                                     max_em_step, em_params_file, min_size_to_bootstrap=int(1e4),
-                                                    bootstrap_p=0.1, feature_no=6, bootstrap_no=10):
+                                                    bootstrap_p=0.1, feature_no=3, bootstrap_no=3):
     pairwise_ranks, kmer_combinations = __calculate_kmer_metrics(unique_kmers, full_metrics, cpus, save_results)
 
     print(f"Starting optimization with {no_matched_models}...")
@@ -488,7 +496,8 @@ def calculate_kmer_to_kmer_matchscores(inputdf, k, metrics, background_info,
                                        use_motifs_individually=False,
                                        cpus=-1, max_em_step=20, no_matched_models=None,
                                        save_results='../../test_results_match_probabilities/test_store.csv',
-                                       preselection_part=0.5, em_params_file=None):
+                                       preselection_part=0.5, em_params_file=None,
+                                       bootstrap_no=3, feature_size=6):
     # curate the metrics
     if cpus == -1:
         cpus = cpu_count()
@@ -524,6 +533,8 @@ def calculate_kmer_to_kmer_matchscores(inputdf, k, metrics, background_info,
                                                                                    unique_kmers, kmers_mapped_to_sqs,
                                                                                    full_metrics, cpus, save_results,
                                                                                    preselection_part,
-                                                                                   max_em_step, em_params_file
+                                                                                   max_em_step, em_params_file,
+                                                                                   bootstrap_no=bootstrap_no,
+                                                                                   feature_no=feature_size
                                                                                    )
     return pairwise_scoring_results

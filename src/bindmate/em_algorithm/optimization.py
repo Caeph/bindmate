@@ -325,14 +325,17 @@ class EMOptimizer:
         # print("E-step done")
         return qs
 
-    def __m_step(self, qs, observed_values, thr=0.001):
+    def __m_step(self, qs, observed_values, thr=1e-50):
         # print("M-step started")
         new_priors = {}
+        total = 0
         for z in self.z:
             p = np.mean(qs[z])
-            # p = np.fmax(thr, p)
-            # p = np.fmin(1 - thr, p)
+            p = np.fmax(thr, p)
+            p = np.fmin(1 - thr, p)
+            total += p
             new_priors[z] = p
+        new_priors = {x: new_priors[x] / total for x in new_priors}
 
         # new_theta = {}
         # for z in self.z:

@@ -14,18 +14,19 @@ def main():
                                             # 'hoco_mse_human_basic_leucine_zipper_factors_(bzip)',
                                             # 'hoco_mse_human_homeo_domain_factors',
                                             # 'hoco_mse_human_helix-turn-helix_domains',
-                                            'hoco_mse_human_basic_domains',
+                                            # 'hoco_mse_human_basic_domains',
                                             'gc',
                                             'shape:EP',
                                             'shape:HelT',
                                             'shape:MGW',
                                             'shape:ProT',
                                             'shape:Roll',
-                                            "probound_mse_human"
+                                            # "probound_mse_human"
                                         ],
                                         out, background_type="sampled", background_size=1500,
                                         background_source_file='backgrounds/upstream2000.fa',
-                                        no_matched_models=2
+                                        no_matched_models=2,
+                                        max_em_step=12
                                         )
     similarities = tool.fit_predict_fasta(inputfile)  # seq to seq
 
