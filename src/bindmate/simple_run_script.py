@@ -42,7 +42,7 @@ if __name__ == '__main__':
                                         preselection_part=0.15,
                                         no_matched_models=2,
                                         bootstrap_no=12,
-                                        feature_size=None,
+                                        feature_size=7,
                                         background_source_file=os.path.join(script_dir,
                                                                             'backgrounds/upstream2000.fa'),
 
