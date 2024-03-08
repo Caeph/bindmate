@@ -1,4 +1,7 @@
+from collections import Counter
 from difflib import SequenceMatcher
+from itertools import product
+
 import numpy as np
 from scipy.optimize import minimize_scalar
 from scipy import stats
@@ -155,6 +158,41 @@ class LCSmetric(Metric):
         kmer1, kmer2 = self.unique_kmers[i1], self.unique_kmers[i2]
         match = SequenceMatcher(None, kmer1, kmer2).find_longest_match()
         return match.size
+
+
+class PairContent(Metric):
+    def __init__(self):
+        super().__init__("pair",
+                         "distance",
+                         "Difference in dinucleotide pair content")
+        # TODO set params - should be poisson/exponentials or sth like that
+        super().define_optimalization_params(
+            # 1
+            dict(argmax=distributions["univariate_gaussian"]["argmax"],
+                 proba=distributions["univariate_gaussian"]["proba"],
+                 params_bounds=[None, (0.5, 1e8)],
+                 initial_parameters=[5, 5]),
+            dict(argmax=distributions["univariate_uniform"]["argmax"],
+                 proba=distributions["univariate_uniform"]["proba"],
+                 params_bounds=[(0, 10e8)],
+                 initial_parameters=[1000])
+        )
+        self.pairs = None
+        self.info = ["".join(pair) for pair in product(list('ACGT'), list('ACGT'))]
+
+    def __characterize(self, seq):
+        counts = Counter([seq[i:i + 2] for i in range(len(seq) - 1)])
+        res = np.array([counts[pair] for pair in self.info], dtype=np.uint8)
+        return res
+
+    def initialize(self, unique_kmers):
+        self.pairs = np.vstack([self.__characterize(x) for x in unique_kmers])
+
+    def compare_kmers(self, i1, i2):
+        a = self.pairs[i1]
+        b = self.pairs[i2]
+        diff = a - b
+        return np.mean(diff * diff)
 
 
 class GCcontent(Metric):

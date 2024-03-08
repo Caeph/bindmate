@@ -6,7 +6,8 @@ from seq_to_seq_matchscores import *
 
 class PairingProbabilityCalculator:
     def __init__(self, k, metrics, material_saving_dir,
-                 max_em_step=10, preselection_part=0.5, no_matched_models=None,
+                 max_em_step=10, preselection_part=0.5, bootstrap_no=3,
+                 feature_size=None, no_matched_models=None,
                  background_type=None, background_size=None, **bgkwargs):
         # set up kmer similarity functions
         # set up preselection no
@@ -17,6 +18,11 @@ class PairingProbabilityCalculator:
         self.max_em_step = max_em_step
         self.no_matched_models = no_matched_models
         self.preselection_part = preselection_part
+        self.bootstrap_no = bootstrap_no
+        if feature_size is None:
+            self.feature_size = len(metrics)
+        else:
+            self.feature_size = feature_size
 
     def add_user_defined_metric(self, function):
         # todo fill out missing stuff
@@ -55,12 +61,15 @@ class PairingProbabilityCalculator:
         optimized = calculate_kmer_to_kmer_matchscores(sequences, self.k, self.metrics,
                                                        self.background,
                                                        save_results=os.path.join(
-                                                        self.material_saving_dir, "metric_ranks.csv.gz"
-                                                       ), em_params_file=os.path.join(
-                                                        self.material_saving_dir, "recorded_parameters.csv"
-                                                       ), no_matched_models=self.no_matched_models,
+                                                           self.material_saving_dir, "metric_ranks.csv.gz"
+                                                       ),
+                                                       em_params_file=os.path.join( self.material_saving_dir,
+                                                                                    "recorded_parameters.csv"),
+                                                       no_matched_models=self.no_matched_models,
                                                        max_em_step=self.max_em_step,
-                                                       preselection_part=self.preselection_part
+                                                       preselection_part=self.preselection_part,
+                                                       feature_size=self.feature_size,
+                                                       bootstrap_no=self.bootstrap_no
                                                        )
         # save stuff
         optimized.save(self.material_saving_dir)

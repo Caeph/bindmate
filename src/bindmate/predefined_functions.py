@@ -25,6 +25,7 @@ def initialize_available_functions(k, use_motifs_individually, background_type, 
     predefined_functions = {
         "lcs": LCSmetric(),
         "gc": GCcontent(),
+        "pair": PairContent(),
         "shape:EP" : ShapeMetric("EP"),
         "shape:HelT": ShapeMetric("HelT"),
         "shape:MGW": ShapeMetric("MGW"),
