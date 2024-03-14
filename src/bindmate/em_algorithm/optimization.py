@@ -193,8 +193,6 @@ class WeightedModelEnsemble(ProbabilityModelEnsemble):
                     weight_mz = weights[z][m]
                     current_res = weight_mz * np.sum(p * qs[z])
                     result = result + current_res
-
-            # I want to maximize
             return - result
 
         init_params = []
@@ -208,7 +206,7 @@ class WeightedModelEnsemble(ProbabilityModelEnsemble):
                 elif init_guess == 'random':
                     init_params.extend(self.models[z].parameters[m])
                 else:
-                    raise NotImplementedError("Unknown method of parameter estimation.")
+                    raise NotImplementedError("Unknown method of getting initial guess.")
                 param_bounds.extend([check_bounds(bounds, observed_values[:, m]) for bounds in self.models[z].optimization_info[m]['params_bounds']])
                 about_params.append(len(self.models[z].parameters[m]))
 
@@ -435,8 +433,8 @@ class EMOptimizer:
 
                 print(f"{identificator}: ITERATION {i}")
                 print(f"{identificator}: objective func value: {objective_value}")
-                # print(f"{identificator}: OLD: {old_parameters}")
-                # print(f"{identificator}: NEW: {new_parameters}")
+                print(f"{identificator}: OLD: {old_parameters}")
+                print(f"{identificator}: NEW: {new_parameters}")
 
                 convergence = self.check_convergence(old_parameters, new_parameters, objective_value, tolerance)
                 if convergence:
