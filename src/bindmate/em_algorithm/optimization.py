@@ -133,7 +133,7 @@ class WeightedModelEnsemble(ProbabilityModelEnsemble):
 
         return np.exp(result)
 
-    def argmax_params(self, qs, observed_values, new_priors):
+    def argmax_params(self, qs, observed_values, new_priors, init_guess='previous'):
         # one call of numerical solving U
         def KL_divergence_weight(z, m, p_xmi, pseudocount=1e-9):
             p_xi = np.sum(p_xmi[:, :, m], axis=0) + pseudocount
@@ -193,6 +193,8 @@ class WeightedModelEnsemble(ProbabilityModelEnsemble):
                     weight_mz = weights[z][m]
                     current_res = weight_mz * np.sum(p * qs[z])
                     result = result + current_res
+
+            # I want to maximize
             return - result
 
         init_params = []
@@ -200,9 +202,14 @@ class WeightedModelEnsemble(ProbabilityModelEnsemble):
         param_bounds = []
         for z in range(len(self.models)):
             for m in range(observed_values.shape[1]):
-                init_params.extend(self.models[z].parameters[m])
+                #
+                if init_guess == 'previous':
+                    init_params.extend(self.models[z].parameters[m])
+                elif init_guess == 'random':
+                    init_params.extend(self.models[z].parameters[m])
+                else:
+                    raise NotImplementedError("Unknown method of parameter estimation.")
                 param_bounds.extend([check_bounds(bounds, observed_values[:, m]) for bounds in self.models[z].optimization_info[m]['params_bounds']])
-
                 about_params.append(len(self.models[z].parameters[m]))
 
         def flat_array_to_params_dict(params_vector):
@@ -220,7 +227,9 @@ class WeightedModelEnsemble(ProbabilityModelEnsemble):
 
         # numerically minimize objective function
         # TODO this might need speeding up
-        minimizing = optimize.minimize(full_objective, np.array(init_params), bounds=param_bounds)
+        minimizing = optimize.minimize(full_objective, np.array(init_params), bounds=param_bounds, method='SLSQP'
+                                       )
+        print(minimizing.message)
         # minimizing = optimize.dual_annealing(full_objective, bounds=param_bounds)
         best_params = flat_array_to_params_dict(minimizing.x)
 
@@ -228,7 +237,7 @@ class WeightedModelEnsemble(ProbabilityModelEnsemble):
         self.weights = calculate_weights(best_p_xmi, minimal_weight=1e-6)
         # print(f"Achieved best weights: {self.weights}")
 
-        return best_params
+        return best_params, minimizing.fun
 
 
 
@@ -303,6 +312,7 @@ class EMOptimizer:
             self.models = ProbabilityModelEnsemble(models)
         self.priors = priors  # dictionary z: prior[z]
         self.weighted = weighted
+        self.current_objective_value = np.inf
 
     def __e_step(self, observed_values):
         # print("E-step started")
@@ -340,10 +350,10 @@ class EMOptimizer:
         # new_theta = {}
         # for z in self.z:
         #     new_theta[z] = self.models[z].argmax_for_parameters(qs[z], observed_values)
-        new_theta = self.models.argmax_params(qs, observed_values, new_priors)
+        new_theta, objective_value = self.models.argmax_params(qs, observed_values, new_priors)
 
         # print("M-step done")
-        return new_priors, new_theta
+        return new_priors, new_theta, objective_value
 
     def __record(self, parameters, colector, sep=';', subsep=';'):
         if colector is None:
@@ -361,23 +371,28 @@ class EMOptimizer:
         model_params = [subsep.join(flatten_to_string(x)) for x in parameters[:-len(self.models)]]
         print(sep.join([*model_params, *priors]), file=colector)
 
-    def check_convergence(self, old_parameters, new_parameters, tol):
-        def flatten(l):
-            flat_list = [item for sublist in l for item in sublist]
-            return np.array(flat_list)
+    def check_convergence(self, old_parameters, new_parameters, objective_value, tol):
+        if np.abs(objective_value - self.current_objective_value) <= tol:
+            return True
+        self.current_objective_value = objective_value
+        return False
 
-        new_params, new_priors = new_parameters[:-len(self.models)], new_parameters[-len(self.models):]
-        old_params, old_priors = old_parameters[:-len(self.models)], old_parameters[-len(self.models):]
-
-        # compare priors:
-        for o, n in zip(old_priors, new_priors):
-            if np.abs(o - n) > tol:
-                return False
-
-        # compare models
-        for o, n in zip(old_params, new_params):
-            if not np.allclose(flatten(o), flatten(n), tol):
-                return False
+        # def flatten(l):
+        #     flat_list = [item for sublist in l for item in sublist]
+        #     return np.array(flat_list)
+        #
+        # new_params, new_priors = new_parameters[:-len(self.models)], new_parameters[-len(self.models):]
+        # old_params, old_priors = old_parameters[:-len(self.models)], old_parameters[-len(self.models):]
+        #
+        # # compare priors:
+        # for o, n in zip(old_priors, new_priors):
+        #     if np.abs(o - n) > tol:
+        #         return False
+        #
+        # # compare models
+        # for o, n in zip(old_params, new_params):
+        #     if not np.allclose(flatten(o), flatten(n), tol):
+        #         return False
 
         # new_unmatched, new_matched, new_prior0, new_prior1 = new_parameters
         # old_unmatched, old_matched, old_prior0, old_prior1 = old_parameters
@@ -408,7 +423,7 @@ class EMOptimizer:
             warnings.simplefilter("ignore")
             for i in range(max_step):
                 qs = self.__e_step(observed_values)
-                new_priors, new_theta = self.__m_step(qs, observed_values)
+                new_priors, new_theta, objective_value = self.__m_step(qs, observed_values)
 
                 self.priors = new_priors
                 for z in self.z:
@@ -419,12 +434,13 @@ class EMOptimizer:
                 new_parameters.extend([self.priors[z] for z in self.z])
 
                 print(f"{identificator}: ITERATION {i}")
-                print(f"{identificator}: OLD: {old_parameters}")
-                print(f"{identificator}: NEW: {new_parameters}")
+                print(f"{identificator}: objective func value: {objective_value}")
+                # print(f"{identificator}: OLD: {old_parameters}")
+                # print(f"{identificator}: NEW: {new_parameters}")
 
-                convergence = self.check_convergence(old_parameters, new_parameters, tolerance)
+                convergence = self.check_convergence(old_parameters, new_parameters, objective_value, tolerance)
                 if convergence:
-                    # print("CONVERGENCE")
+                    print("CONVERGENCE")
                     break
 
                 # recorded_parameters.append(old_parameters)

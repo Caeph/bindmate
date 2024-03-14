@@ -3,12 +3,13 @@ from kmer_to_kmer_matchscores import PairingResults
 
 
 def main():
-    inputfile = "../../small_unbalanced_test_dataset_randombg.fasta"  # swift, for general functionality testing
+    # inputfile = "../../small_unbalanced_test_dataset_randombg.fasta"  # swift, for general functionality testing
     # inputfile = "../../fake_sequence_less_blurred_0_10_250_100_100.fasta"
     #
-    # inputfile = "../../biodata_CTCF_TP53_l:300_n:200:200.fasta"
-    out = "../../test_results_match_probabilities"
-    tool = PairingProbabilityCalculator(24,
+    inputfile = "../../biodata_CTCF_TP53_l:300_n:200:200.fasta"
+    # out = "../../test_results_match_probabilities"
+    out = "../../test_results_biodata_convergence_crit"
+    tool = PairingProbabilityCalculator(42,
                                         [
                                             # 'hoco_mse_human_basic_helix-loop-helix_factors_(bhlh)',
                                             # 'hoco_mse_human_basic_leucine_zipper_factors_(bzip)',

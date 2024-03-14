@@ -62,10 +62,6 @@ def initialize_available_functions(k, use_motifs_individually, background_type, 
                 predefined_functions[func_title] = function
     else:
         raise NotImplementedError("TODO - individual motifs")
-        # individual models for a motif selection
-
-        # ProBound
-
-        # HOCOMOCO
+        # TODO individual models for a motif selection
 
     return predefined_functions
