@@ -90,7 +90,8 @@ def __inner_bootstrap_optimize(inner_bootstrap_params):
         possible_latent=[0, *matched_models_z],
         priors=priors,
         models=all_models,
-        weighted=True
+        # weighted=True
+
     )
     print(f"{ident}: Initialization complete...")
     models = em_algo.optimize(bootstrapped_ranks, max_step, tolerance, identificator=ident)
@@ -101,8 +102,8 @@ def __inner_bootstrap_optimize(inner_bootstrap_params):
 def __optimize_arbitrary_no_weighted_models_bootstrap_points_and_metrics(no_matched_models, all_ranks, full_metrics,
                                                                          alpha=0.1, priors=None, max_step=10,
                                                                          tolerance=0.001, em_params_file=None,
-                                                                         bootstrap_size=int(5e5), bootstrap_no=3,
-                                                                         feature_size=6, threads=8):
+                                                                         bootstrap_size=int(5e5), bootstrap_no=1,
+                                                                         feature_size=6, threads=1):
     mean_mismatch_proba, mean_match_proba = np.zeros(len(all_ranks)), np.zeros(len(all_ranks))
     l = len(all_ranks)
     f = all_ranks.shape[1]
@@ -132,14 +133,19 @@ def __optimize_arbitrary_no_weighted_models_bootstrap_points_and_metrics(no_matc
                   matched_models_z, priors, max_step, tolerance]
         bootstrapped_inputs.append(strap)
 
-    with multiprocessing.Pool(threads) as pool:
-        try:
-            trained_models = pool.map(__inner_bootstrap_optimize, bootstrapped_inputs)
-            trained_models = list(trained_models)
-        finally:
-            print("All models are trained, multiprocessing cleanup")
-            pool.close()
-            pool.join()
+    if threads > 1:
+        with multiprocessing.Pool(threads) as pool:
+            try:
+                trained_models = pool.map(__inner_bootstrap_optimize, bootstrapped_inputs)
+                trained_models = list(trained_models)
+            finally:
+                print("All models are trained, multiprocessing cleanup")
+                pool.close()
+                pool.join()
+    else:
+        trained_models = []
+        for strap in bootstrapped_inputs:
+            trained_models.append(__inner_bootstrap_optimize(strap))
     # trained_models = list(map(__inner_bootstrap_optimize, bootstrapped_inputs))
     print("Pool closed.")
 
@@ -165,68 +171,68 @@ def __optimize_arbitrary_no_weighted_models_bootstrap_points_and_metrics(no_matc
     return mean_mismatch_proba, mean_match_proba
 
 
-def __optimize_arbitrary_no_weighted_models_bootstrap(no_matched_models, all_ranks, full_metrics, alpha=0.1,
-                                                      priors=None, max_step=10, tolerance=0.001, em_params_file=None,
-                                                      bootstrap_no=3, bootstrap_size=int(5e5)):
-    mean_mismatch_proba, mean_match_proba = np.zeros(len(all_ranks)), np.zeros(len(all_ranks))
-    l = len(all_ranks)
-
-    if l < bootstrap_size:
-        return __optimize_arbitrary_no_weighted_models(no_matched_models,
-                                                       all_ranks,
-                                                       full_metrics,
-                                                       alpha,
-                                                       priors,
-                                                       max_step,
-                                                       tolerance,
-                                                       em_params_file)
-    print(f"Bootstrapping {bootstrap_no} times to size {bootstrap_size}.")
-
-    for i in range(bootstrap_no):
-        bootstrapped_ranks = all_ranks[np.random.choice(l, bootstrap_size, replace=False), :]
-
-        unmatched = ProbabilityModel(0, full_metrics)
-        matched_models_z = list(range(1, no_matched_models + 1))
-        all_models = {z: ProbabilityModel(z, full_metrics, get_params_from_matched=True) for z in matched_models_z}
-        all_models[0] = unmatched
-
-        if priors is None:
-            unif = (alpha / no_matched_models)
-            priors = {z: unif + np.random.uniform(-unif / 2, unif / 2) for z in matched_models_z}
-            priors[0] = 1 - np.sum([priors[z] for z in matched_models_z])
-
-        em_algo = EMOptimizer(
-            possible_latent=[0, *matched_models_z],
-            priors=priors,
-            models=all_models,
-            weighted=True
-        )
-        print("Initialization complete...")
-        if em_params_file is None:
-            models = em_algo.optimize(bootstrapped_ranks, max_step, tolerance)
-        else:
-            with open(em_params_file, mode='w') as writer:
-                print('unmatched_params,matched_params,prior_0,prior_1', file=writer)
-                models = em_algo.optimize(bootstrapped_ranks, max_step, tolerance, parameter_colector=writer)
-        print("Calculating final probability")
-
-        probas_0 = models[0].calculate_probability(all_ranks)
-        mismatch_proba = probas_0
-
-        # this is a logical or
-        match_proba = np.zeros_like(probas_0)
-        for z in matched_models_z:
-            match_proba = models[z].calculate_probability(all_ranks) + match_proba
-            # match_proba = np.fmax(models[z].calculate_probability(all_ranks), match_proba)
-
-        # add to bulk
-        mean_mismatch_proba = mean_mismatch_proba + mismatch_proba
-        mean_match_proba = mean_match_proba + match_proba
-
-    mean_mismatch_proba = mean_mismatch_proba / bootstrap_no
-    mean_match_proba = mean_match_proba / bootstrap_no
-
-    return mean_mismatch_proba, mean_match_proba
+# def __optimize_arbitrary_no_weighted_models_bootstrap(no_matched_models, all_ranks, full_metrics, alpha=0.1,
+#                                                       priors=None, max_step=10, tolerance=0.001, em_params_file=None,
+#                                                       bootstrap_no=3, bootstrap_size=int(5e5)):
+#     mean_mismatch_proba, mean_match_proba = np.zeros(len(all_ranks)), np.zeros(len(all_ranks))
+#     l = len(all_ranks)
+#
+#     if l < bootstrap_size:
+#         return __optimize_arbitrary_no_weighted_models(no_matched_models,
+#                                                        all_ranks,
+#                                                        full_metrics,
+#                                                        alpha,
+#                                                        priors,
+#                                                        max_step,
+#                                                        tolerance,
+#                                                        em_params_file)
+#     print(f"Bootstrapping {bootstrap_no} times to size {bootstrap_size}.")
+#
+#     for i in range(bootstrap_no):
+#         bootstrapped_ranks = all_ranks[np.random.choice(l, bootstrap_size, replace=False), :]
+#
+#         unmatched = ProbabilityModel(0, full_metrics)
+#         matched_models_z = list(range(1, no_matched_models + 1))
+#         all_models = {z: ProbabilityModel(z, full_metrics, get_params_from_matched=True) for z in matched_models_z}
+#         all_models[0] = unmatched
+#
+#         if priors is None:
+#             unif = (alpha / no_matched_models)
+#             priors = {z: unif + np.random.uniform(-unif / 2, unif / 2) for z in matched_models_z}
+#             priors[0] = 1 - np.sum([priors[z] for z in matched_models_z])
+#
+#         em_algo = EMOptimizer(
+#             possible_latent=[0, *matched_models_z],
+#             priors=priors,
+#             models=all_models,
+#             # weighted=True
+#         )
+#         print("Initialization complete...")
+#         if em_params_file is None:
+#             models = em_algo.optimize(bootstrapped_ranks, max_step, tolerance)
+#         else:
+#             with open(em_params_file, mode='w') as writer:
+#                 print('unmatched_params,matched_params,prior_0,prior_1', file=writer)
+#                 models = em_algo.optimize(bootstrapped_ranks, max_step, tolerance, parameter_colector=writer)
+#         print("Calculating final probability")
+#
+#         probas_0 = models[0].calculate_probability(all_ranks)
+#         mismatch_proba = probas_0
+#
+#         # this is a logical or
+#         match_proba = np.zeros_like(probas_0)
+#         for z in matched_models_z:
+#             match_proba = models[z].calculate_probability(all_ranks) + match_proba
+#             # match_proba = np.fmax(models[z].calculate_probability(all_ranks), match_proba)
+#
+#         # add to bulk
+#         mean_mismatch_proba = mean_mismatch_proba + mismatch_proba
+#         mean_match_proba = mean_match_proba + match_proba
+#
+#     mean_mismatch_proba = mean_mismatch_proba / bootstrap_no
+#     mean_match_proba = mean_match_proba / bootstrap_no
+#
+#     return mean_mismatch_proba, mean_match_proba
 
 
 def __optimize_arbitrary_no_models_inner(no_matched_models, matched_models_z, all_models, all_ranks, max_step=10,
@@ -240,7 +246,7 @@ def __optimize_arbitrary_no_models_inner(no_matched_models, matched_models_z, al
         possible_latent=[0, *matched_models_z],
         priors=priors,
         models=all_models,
-        weighted=weighted
+        # weighted=weighted
     )
     print("Initialization complete...")
     if em_params_file is None:
@@ -263,24 +269,25 @@ def __optimize_arbitrary_no_models_inner(no_matched_models, matched_models_z, al
     return mismatch_proba, match_proba
 
 
-def __optimize_arbitrary_no_models(no_matched_models, all_ranks, full_metrics, alpha=0.1,
-                                   priors=None, max_step=10, tolerance=0.001, em_params_file=None, weighted=False):
-    unmatched = ProbabilityModel(0, full_metrics)
-    matched_models_z = list(range(1, no_matched_models + 1))
-    all_models = {z: ProbabilityModel(z, full_metrics, get_params_from_matched=True) for z in matched_models_z}
-    all_models[0] = unmatched
-
-    mismatch_proba, match_proba = __optimize_arbitrary_no_models_inner(no_matched_models,
-                                                                       matched_models_z,
-                                                                       all_models,
-                                                                       all_ranks,
-                                                                       max_step=max_step,
-                                                                       tolerance=tolerance,
-                                                                       em_params_file=em_params_file,
-                                                                       alpha=alpha,
-                                                                       priors=priors, weighted=False)
-
-    return mismatch_proba, match_proba
+# def __optimize_arbitrary_no_models(no_matched_models, all_ranks, full_metrics, alpha=0.1,
+#                                    priors=None, max_step=10, tolerance=0.001, em_params_file=None, weighted=False):
+#     unmatched = ProbabilityModel(0, full_metrics)
+#     matched_models_z = list(range(1, no_matched_models + 1))
+#     all_models = {z: ProbabilityModel(z, full_metrics, get_params_from_matched=True) for z in matched_models_z}
+#     all_models[0] = unmatched
+#
+#     mismatch_proba, match_proba = __optimize_arbitrary_no_models_inner(no_matched_models,
+#                                                                        matched_models_z,
+#                                                                        all_models,
+#                                                                        all_ranks,
+#                                                                        max_step=max_step,
+#                                                                        tolerance=tolerance,
+#                                                                        em_params_file=em_params_file,
+#                                                                        alpha=alpha,
+#                                                                        priors=priors, weighted=False
+#                                                                        )
+#
+#     return mismatch_proba, match_proba
 
 
 def __optimize_two_models(all_ranks, full_metrics, priors=None, max_step=10, tolerance=0.0001, em_params_file=None):
