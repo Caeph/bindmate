@@ -90,6 +90,7 @@ def __inner_bootstrap_optimize(inner_bootstrap_params):
         possible_latent=[0, *matched_models_z],
         priors=priors,
         models=all_models,
+        batch_identificator=ident
         # weighted=True
 
     )
@@ -246,6 +247,7 @@ def __optimize_arbitrary_no_models_inner(no_matched_models, matched_models_z, al
         possible_latent=[0, *matched_models_z],
         priors=priors,
         models=all_models,
+        batch_identificator=1
         # weighted=weighted
     )
     print("Initialization complete...")
@@ -300,7 +302,8 @@ def __optimize_two_models(all_ranks, full_metrics, priors=None, max_step=10, tol
     em_algo = EMOptimizer(
         possible_latent=[0, 1],
         priors=priors,
-        models={0: unmatched, 1: matched}
+        models={0: unmatched, 1: matched},
+        batch_identificator=1
     )
     print("Initialization complete...")
     if em_params_file is None:
@@ -421,14 +424,14 @@ def __calculate_kmer_metrics(unique_kmers, full_metrics, cpus, save_results):
 
 def __calculate_kmer_to_kmer_matchscores_multimodel(no_matched_models, unique_kmers, kmers_mapped_to_sqs,
                                                     full_metrics, cpus, save_results, preselection_part,
-                                                    max_em_step, em_params_file, min_size_to_bootstrap=int(1e4),
+                                                    max_em_step, em_params_file, min_size_to_bootstrap=int(1e3),
                                                     bootstrap_p=0.1, feature_no=3, bootstrap_no=3):
     pairwise_ranks, kmer_combinations = __calculate_kmer_metrics(unique_kmers, full_metrics, cpus, save_results)
 
     print(f"Starting optimization with {no_matched_models}...")
     start = time.time()
 
-    bs_size = int(np.fmin(len(kmer_combinations) * bootstrap_p, min_size_to_bootstrap))
+    bs_size = int(np.fmax(len(kmer_combinations) * bootstrap_p, min_size_to_bootstrap))
     print(f"Bootstrapping size was set as {bs_size} data points")
     # mismatch_proba, match_proba = __optimize_arbitrary_no_weighted_models_bootstrap(no_matched_models, pairwise_ranks,
     #                                                                                 full_metrics,
@@ -443,7 +446,8 @@ def __calculate_kmer_to_kmer_matchscores_multimodel(no_matched_models, unique_km
         em_params_file=em_params_file,
         bootstrap_size=bs_size,
         feature_size=feature_no,
-        bootstrap_no=bootstrap_no
+        bootstrap_no=bootstrap_no,
+        threads=cpus
     )
 
     print(f"Probabilities calculated, optimization complete: {time.time() - start}")
@@ -501,13 +505,13 @@ def __calculate_kmer_to_kmer_matchscores(unique_kmers, kmers_mapped_to_sqs,
 
 def calculate_kmer_to_kmer_matchscores(inputdf, k, metrics, background_info,
                                        use_motifs_individually=False,
-                                       cpus=-1, max_em_step=20, no_matched_models=None,
+                                       threads=-1, max_em_step=20, no_matched_models=None,
                                        save_results='../../test_results_match_probabilities/test_store.csv',
                                        preselection_part=0.5, em_params_file=None,
                                        bootstrap_no=3, feature_size=6):
     # curate the metrics
-    if cpus == -1:
-        cpus = cpu_count()
+    if threads == -1:
+        threads = cpu_count()
 
     predefined_functions = initialize_available_functions(
         k, use_motifs_individually, *background_info
@@ -533,12 +537,12 @@ def calculate_kmer_to_kmer_matchscores(inputdf, k, metrics, background_info,
     # do the work
     if (no_matched_models is None) or (no_matched_models == 1):
         pairwise_scoring_results = __calculate_kmer_to_kmer_matchscores(
-            unique_kmers, kmers_mapped_to_sqs, full_metrics, cpus, save_results, preselection_part,
+            unique_kmers, kmers_mapped_to_sqs, full_metrics, threads, save_results, preselection_part,
             max_em_step, em_params_file)
     else:
         pairwise_scoring_results = __calculate_kmer_to_kmer_matchscores_multimodel(no_matched_models,
                                                                                    unique_kmers, kmers_mapped_to_sqs,
-                                                                                   full_metrics, cpus, save_results,
+                                                                                   full_metrics, threads, save_results,
                                                                                    preselection_part,
                                                                                    max_em_step, em_params_file,
                                                                                    bootstrap_no=bootstrap_no,

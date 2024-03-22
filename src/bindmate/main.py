@@ -29,8 +29,10 @@ def main():
                                         out, background_type="sampled", background_size=1500,
                                         background_source_file='backgrounds/upstream2000.fa',
                                         no_matched_models=2,
-                                        max_em_step=12,
-                                        bootstrap_no=1
+                                        max_em_step=10,
+                                        bootstrap_no=3,
+                                        preselection_part=0.25,
+                                        threads=8
                                         )
     similarities = tool.fit_predict_fasta(inputfile)  # seq to seq
 

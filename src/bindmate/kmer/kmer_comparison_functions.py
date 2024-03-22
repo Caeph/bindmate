@@ -1,6 +1,6 @@
 from collections import Counter
 from difflib import SequenceMatcher
-from itertools import product
+from itertools import product, chain
 
 import numpy as np
 from scipy.optimize import minimize_scalar
@@ -11,7 +11,10 @@ import pyProBound
 from tqdm import tqdm
 import os
 import rpy2.robjects as robjects
+import warnings
 
+# with warnings.catch_warnings():
+#     warnings.simplefilter("ignore")
 robjects.r('library(BiocManager)')
 
 script_dir = os.path.split(os.path.realpath(__file__))[0]
@@ -82,6 +85,18 @@ def apply_uniform_proba(val, params):
     return 1 / params[0]
 
 
+no_models = 5
+def apply_gmm_proba(val, params, no_models=no_models):
+    total_proba = 0
+    params_counter = 0
+    for i in range(no_models):
+        loc, scale, weight = params[params_counter], params[params_counter + 1], params[params_counter + 2]
+        total_proba += weight*stats.norm.pdf(val, loc, scale)
+        params_counter += 3
+    return total_proba
+
+
+
 distributions = {
     "univariate_gaussian": dict(
         argmax=apply_gaussian_argmax,
@@ -94,6 +109,11 @@ distributions = {
     "univariate_uniform": dict(
         argmax=apply_uniform_argmax,
         proba=apply_uniform_proba,
+    ),
+    "univariate_gmm": dict(
+        proba=apply_gmm_proba,
+        bounds=list(chain.from_iterable(([-1e3, 1e8], [1e-3, 1e5], [1e-3, 1-1e-3]) for _ in range(no_models)))
+                                                # loc, scale, weight
     )
 }
 
@@ -141,17 +161,22 @@ class LCSmetric(Metric):
         super().__init__("LCS",
                          "similarity",
                          "Size of the longest common substring shared between two kmers")
+        local_max = 10e4
         super().define_optimalization_params(
             # 1
-            dict(argmax=distributions["univariate_gaussian"]["argmax"],
-                 proba=distributions["univariate_gaussian"]["proba"],
-                 params_bounds=[(0, int(10e8)), (0, int(10e8))],
-                 initial_parameters=[50, 5]),
+            dict(proba=distributions['univariate_gmm']['proba'],
+                 params_bounds=distributions['univariate_gmm']['bounds'],
+                 initial_parameters=list(
+                     chain.from_iterable((i * local_max / no_models, (10 * i + 1), 1/no_models) for i in range(
+                         no_models)))
+                 ),
             # 0
-            dict(argmax=distributions["univariate_gaussian"]["argmax"],
-                 proba=distributions["univariate_gaussian"]["proba"],
-                 params_bounds=[(0, int(10e8)), (0, int(10e8))],
-                 initial_parameters=[100, 5])
+            dict(proba=distributions['univariate_gmm']['proba'],
+                 params_bounds=distributions['univariate_gmm']['bounds'],
+                 initial_parameters=list(
+                     chain.from_iterable((i * local_max / no_models, 10 * no_models, 1/no_models) for i in range(
+                         no_models)))
+                 ),
         )
 
     def compare_kmers(self, i1, i2):
@@ -166,16 +191,22 @@ class PairContent(Metric):
                          "distance",
                          "Difference in dinucleotide pair content")
         # TODO set params - should be poisson/exponentials or sth like that
+        local_max = 100
         super().define_optimalization_params(
             # 1
-            dict(argmax=distributions["univariate_gaussian"]["argmax"],
-                 proba=distributions["univariate_gaussian"]["proba"],
-                 params_bounds=[None, (0.5, 1e8)],
-                 initial_parameters=[5, 5]),
-            dict(argmax=distributions["univariate_uniform"]["argmax"],
-                 proba=distributions["univariate_uniform"]["proba"],
-                 params_bounds=[(0, 10e8)],
-                 initial_parameters=[1000])
+            dict(proba=distributions['univariate_gmm']['proba'],
+                 params_bounds=distributions['univariate_gmm']['bounds'],
+                 initial_parameters=list(
+                     chain.from_iterable((i * local_max / no_models, (10 * i + 1), 1 / no_models) for i in range(
+                         no_models)))
+                 ),
+            # 0
+            dict(proba=distributions['univariate_gmm']['proba'],
+                 params_bounds=distributions['univariate_gmm']['bounds'],
+                 initial_parameters=list(
+                     chain.from_iterable((i * local_max / no_models, 10 * no_models, 1 / no_models) for i in range(
+                         no_models)))
+                 ),
         )
         self.pairs = None
         self.info = ["".join(pair) for pair in product(list('ACGT'), list('ACGT'))]
@@ -202,26 +233,22 @@ class GCcontent(Metric):
                          "Difference in GC content")
 
         # TODO set params - should be poisson/exponentials or sth like that
+        local_max=50
         super().define_optimalization_params(
             # 1
-            dict(argmax=distributions["univariate_gaussian"]["argmax"],
-                 proba=distributions["univariate_gaussian"]["proba"],
-                 params_bounds=[None, (0.5, 1e8)],
-                 initial_parameters=[5, 5]),
-            # # 0
-            # dict(argmax=distributions["univariate_gaussian"]["argmax"],
-            #      proba=distributions["univariate_gaussian"]["proba"],
-            #      params_bounds=[(0, int(10e8)), (0, int(10e8))],
-            #      initial_parameters=[100, 5])
-            # dict(argmax=distributions["univariate_geometric"]["argmax"],
-            #      proba=distributions["univariate_geometric"]["proba"],
-            #      params_bounds=[(0.01, 0.99)],
-            #      initial_parameters=[0.01]),
+            dict(proba=distributions['univariate_gmm']['proba'],
+                 params_bounds=distributions['univariate_gmm']['bounds'],
+                 initial_parameters=list(
+                     chain.from_iterable((i * local_max / no_models, (10 * i + 1), 1 / no_models) for i in range(
+                         no_models)))
+                 ),
             # 0
-            dict(argmax=distributions["univariate_uniform"]["argmax"],
-                 proba=distributions["univariate_uniform"]["proba"],
-                 params_bounds=[(0, 10e8)],
-                 initial_parameters=[1000])
+            dict(proba=distributions['univariate_gmm']['proba'],
+                 params_bounds=distributions['univariate_gmm']['bounds'],
+                 initial_parameters=list(
+                     chain.from_iterable((i * local_max / no_models, 10 * no_models, 1 / no_models) for i in range(
+                         no_models)))
+                 ),
         )
         self.gc = None
 
@@ -242,21 +269,29 @@ class ShapeMetric(Metric):
                          "MSE of chosen shape params")
         self.shape_parameter = shape_parameter
         # TODO set params - should be poisson/exponentials or sth like that
+        local_max = 1e3
         super().define_optimalization_params(
             # 1
-            dict(argmax=distributions["univariate_geometric"]["argmax"],
-                 proba=distributions["univariate_geometric"]["proba"],
-                 params_bounds=[(0.01, 0.99)],
-                 initial_parameters=[0.1]),
+            dict(proba=distributions['univariate_gmm']['proba'],
+                 params_bounds=distributions['univariate_gmm']['bounds'],
+                 initial_parameters=list(
+                     chain.from_iterable((i * local_max / no_models, (10 * i + 1), 1 / no_models) for i in range(
+                         no_models)))
+                 ),
             # 0
-            dict(argmax=distributions["univariate_uniform"]["argmax"],
-                 proba=distributions["univariate_uniform"]["proba"],
-                 params_bounds=[(0, 10e8)],
-                 initial_parameters=[1000])
+            dict(proba=distributions['univariate_gmm']['proba'],
+                 params_bounds=distributions['univariate_gmm']['bounds'],
+                 initial_parameters=list(
+                     chain.from_iterable((i * local_max / no_models, 10 * no_models, 1 / no_models) for i in range(
+                         no_models)))
+                 ),
         )
         self.shape_values = None
 
     def initialize(self, unique_kmers):
+        # with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+
         robjects.r('library(DNAshapeR)')
         temp_fasta_name = "tmp.fasta"
         with open(temp_fasta_name, mode='w') as temp_fasta:
@@ -349,17 +384,23 @@ class HocomocoIOU(PFMmetric):
         )
         self.binder_threshold = binder_threshold
         # TODO optim params setting
+        local_max=1e6
         super().define_optimalization_params(
             # 1
-            dict(argmax=distributions["univariate_gaussian"]["argmax"],
-                 proba=distributions["univariate_gaussian"]["proba"],
-                 params_bounds=[(0, int(10e8)), (0, int(10e8))],
-                 initial_parameters=[1000, 50]),
+            # 1
+            dict(proba=distributions['univariate_gmm']['proba'],
+                 params_bounds=distributions['univariate_gmm']['bounds'],
+                 initial_parameters=list(
+                     chain.from_iterable((i * local_max / no_models, (10 * i + 1), 1 / no_models) for i in range(
+                         no_models)))
+                 ),
             # 0
-            dict(argmax=distributions["univariate_gaussian"]["argmax"],
-                 proba=distributions["univariate_gaussian"]["proba"],
-                 params_bounds=[(0, int(10e8)), (0, int(10e8))],
-                 initial_parameters=[5000, 50])
+            dict(proba=distributions['univariate_gmm']['proba'],
+                 params_bounds=distributions['univariate_gmm']['bounds'],
+                 initial_parameters=list(
+                     chain.from_iterable((i * local_max / no_models, 10 * no_models, 1 / no_models) for i in range(
+                         no_models)))
+                 ),
         )
 
     def initialize(self, unique_kmers):
@@ -387,17 +428,22 @@ class HocomocoMSE(PFMmetric):
             selected_motifs=selected_motifs
         )
         # self.binder_threshold = binder_threshold
+        local_max=1e8
         super().define_optimalization_params(
             # 1
-            dict(argmax=distributions["univariate_geometric"]["argmax"],
-                 proba=distributions["univariate_geometric"]["proba"],
-                 params_bounds=[(10e-10, 1 - 10e-10)],
-                 initial_parameters=[0.01]),
+            dict(proba=distributions['univariate_gmm']['proba'],
+                 params_bounds=distributions['univariate_gmm']['bounds'],
+                 initial_parameters=list(
+                     chain.from_iterable((i * local_max / no_models, (10 * i + 1), 1 / no_models) for i in range(
+                         no_models)))
+                 ),
             # 0
-            dict(argmax=distributions["univariate_uniform"]["argmax"],
-                 proba=distributions["univariate_uniform"]["proba"],
-                 params_bounds=[(0, int(10e8))],
-                 initial_parameters=[1000])
+            dict(proba=distributions['univariate_gmm']['proba'],
+                 params_bounds=distributions['univariate_gmm']['bounds'],
+                 initial_parameters=list(
+                     chain.from_iterable((i * local_max / no_models, 10 * no_models, 1 / no_models) for i in range(
+                         no_models)))
+                 ),
         )
 
     def initialize(self, unique_kmers):
@@ -474,17 +520,22 @@ class ProBoundHumanMSE(ProBoundMetric):
             selected_motifs=selected_motifs
         )
         # TODO optim params setting
+        local_max=1e8
         super().define_optimalization_params(
             # 1
-            dict(argmax=distributions["univariate_geometric"]["argmax"],
-                 proba=distributions["univariate_geometric"]["proba"],
-                 params_bounds=[(10e-10, 1 - 10e-10)],
-                 initial_parameters=[0.01]),
+            dict(proba=distributions['univariate_gmm']['proba'],
+                 params_bounds=distributions['univariate_gmm']['bounds'],
+                 initial_parameters=list(
+                     chain.from_iterable((i * local_max / no_models, (10 * i + 1), 1 / no_models) for i in range(
+                         no_models)))
+                 ),
             # 0
-            dict(argmax=distributions["univariate_uniform"]["argmax"],
-                 proba=distributions["univariate_uniform"]["proba"],
-                 params_bounds=[(0, int(10e8))],
-                 initial_parameters=[1000])
+            dict(proba=distributions['univariate_gmm']['proba'],
+                 params_bounds=distributions['univariate_gmm']['bounds'],
+                 initial_parameters=list(
+                     chain.from_iterable((i * local_max / no_models, 10 * no_models, 1 / no_models) for i in range(
+                         no_models)))
+                 ),
         )
 
     def compare_kmers(self, i1, i2):
