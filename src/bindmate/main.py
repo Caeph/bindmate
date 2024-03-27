@@ -3,10 +3,10 @@ from kmer_to_kmer_matchscores import PairingResults
 
 
 def main():
-    inputfile = "../../small_unbalanced_test_dataset_randombg.fasta"  # swift, for general functionality testing
+    # inputfile = "../../small_unbalanced_test_dataset_randombg.fasta"  # swift, for general functionality testing
     # inputfile = "../../fake_sequence_less_blurred_0_10_250_100_100.fasta"
     #
-    # inputfile = "../../biodata_CTCF_TP53_l:300_n:200:200.fasta"
+    inputfile = "../../biodata_CTCF_TP53_l:300_n:200:200.fasta"
     # out = "../../test_results_match_probabilities"
     # out = "../../test_results_biodata_convergence_crit"
     out = "../../test_results_biodata_gmm"
@@ -29,10 +29,11 @@ def main():
                                         out, background_type="sampled", background_size=1500,
                                         background_source_file='backgrounds/upstream2000.fa',
                                         no_matched_models=2,
-                                        max_em_step=10,
-                                        bootstrap_no=3,
+                                        max_em_step=5,
+                                        bootstrap_no=1,
                                         preselection_part=0.25,
-                                        threads=8
+                                        threads=1,
+                                        no_gmm_models=3
                                         )
     similarities = tool.fit_predict_fasta(inputfile)  # seq to seq
 

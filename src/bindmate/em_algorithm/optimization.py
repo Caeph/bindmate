@@ -153,6 +153,7 @@ class MStepGMMOptimizer:
         # shape: (no_examples, no_metrics)
         self.observed_values = tf.constant(observed_values, dtype=tf.float32)
 
+
         # Transform a dict [0..len(qs)] -> np array to a tensor matrix, constant
         # shape: (no_examples, no_z)
         self.qs = tf.constant(np.array([qs[z] for z in sorted(qs.keys())]), dtype=tf.float32)
@@ -214,15 +215,6 @@ class MStepGMMOptimizer:
                 # Record the operations for automatic differentiation
                 tape.watch(self.variables)
                 loss = self.function_to_optimize(self.variables)
-
-            # if tf.math.abs(loss - last_seen_loss) < tol:
-            #     staying += 1
-            # else:
-            #     staying = 0
-            # last_seen_loss = loss
-            # if staying >= staying_thr:
-            #     print(f"{ident}:\tCONVERGED loss: {loss.numpy()}")
-            #     return loss
 
             # Compute gradients
             gradients = tape.gradient(loss, self.variables)
@@ -334,6 +326,8 @@ class ProbabilityModelEnsemble:
         self.models[z].set_parameters(parameters)
 
 
+
+
 class WeightedModelEnsemble(ProbabilityModelEnsemble):
     # KL divergence as the weight - no new parameters
 
@@ -369,7 +363,7 @@ class WeightedModelEnsemble(ProbabilityModelEnsemble):
         return np.exp(result)
 
     def argmax_params(self, qs, observed_values, new_priors, gmm_only=True, random_init=True, no_tries=5,
-                      optimizer_max_iter=1500, optimizer_tol=0.01, init_params_perturbation_proba=0.1,
+                      optimizer_max_iter=100, optimizer_tol=0.01, init_params_perturbation_proba=0.1,
                       learning_rate=1, constraint_violation_penalty=10000
                       ):
         init_params = {}
@@ -662,11 +656,199 @@ class WeightedModelEnsemble(ProbabilityModelEnsemble):
         # return best_params, minimizing.fun
 
 
-# class GmmWeightedModelEnsemble(WeightedModelEnsemble):
-#     def __init__(self, models, max_no_models=10):
-#         super().__init__(models)
-#         self.max_no_models = max_no_models
-# ALL Pr[x_im | z] is calculated as a linear combination of several Gaussians -- set up for every one
+
+def strictly_between_one_and_zero_and_norm_to_one(x):
+    min_value = 1e-6  # Example: One millionth
+    val = tf.maximum(x, min_value)
+    # val = tf.minimum(val, 1 - min_value)
+    # total = tf.reduce_sum(val)
+    # val = val / total
+
+    return val
+
+
+class MStepGMMOptimizerSingleM:
+    # both m and z is given
+    def __init__(self, observed_values, qs_z, new_z_prior, no_gmm_models, learning_rate=0.1,
+                 penalty_factor=10000, max_iter=1000):
+        variables = []
+        for i in range(no_gmm_models):
+            # set up a gmm parameters model
+            chosen = np.random.choice(observed_values, size=int((1 / no_gmm_models) * len(observed_values)))
+            init_loc, init_scale = (np.quantile(chosen, i / no_gmm_models),
+                                    np.random.normal(10, 3))  # TODO
+            variables.append(
+                tf.Variable(initial_value=[init_loc], dtype=tf.float32, name=f"loc:{i}")
+            )
+            variables.append(
+                tf.Variable(initial_value=[init_scale],
+                            dtype=tf.float32,
+                            name=f"scale:{i}",
+                            constraint=strictly_positive_constraint
+                            )
+            )
+        init_weight = np.array([np.random.randint(low=1, high=10) for _ in range(no_gmm_models)])
+        init_weight = init_weight / init_weight.sum()
+        variables.append(
+            tf.Variable(
+                initial_value=init_weight,
+                dtype=tf.float32,
+                name="weight_vector",
+                constraint=strictly_between_one_and_zero_and_norm_to_one
+            )
+        )
+        self.variables = variables
+
+        # Transform a np 1d matrix to tensor, constant
+        # shape: (no_examples)
+        self.observed_values = tf.constant(observed_values, dtype=tf.float32)
+        values, counts = np.unique(observed_values, return_counts=True)
+        x_mi_probabilities = {v: (c / len(observed_values)) for v, c in zip(values, counts)}
+        self.xmi_probabilities = tf.constant(
+            list(map(x_mi_probabilities.get, observed_values)),
+            dtype=tf.float32
+        )
+        self.bottom_entropy = tf.reduce_sum(self.xmi_probabilities * tf.math.log(self.xmi_probabilities))
+
+        # Transform a dict [0..len(qs)] -> np array to a tensor matrix, constant
+        # shape: (no_examples, no_z)
+        self.qs = tf.constant(qs_z, dtype=tf.float32)
+        self.prior = new_z_prior
+
+        # self.learning_rate = learning_rate
+        self.penalty_factor = penalty_factor
+
+        # Set up the learning rate schedule
+        lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+            learning_rate,
+            decay_steps=max_iter,
+            decay_rate=0.95
+        )
+        self.max_iter=max_iter
+
+        # Create an optimizer with the learning rate schedule
+        self.optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
+
+    # def __constraint_penalties(self, variables):
+    #     penalty = 0
+    #     weights = tf.stack([var for i, var in enumerate(variables) if i % 3 == 2])
+    #     weight_constraint = tf.reduce_sum(weights) - 1.0  # Constraint: sum of weights - 1 should be 0
+    #
+    #     # Apply a penalty for violating the weight constraint
+    #     penalty += self.penalty_factor * tf.square(
+    #         weight_constraint)
+    #
+    #     positivity_constraint = tf.reduce_sum(tf.nn.relu(-weights))
+    #     penalty += self.penalty_factor * tf.square(
+    #         positivity_constraint)
+    #
+    #     return penalty
+
+    def __gaussian_pdf(self, x, mean, std):
+        """Calculate the Gaussian probability density function."""
+        result = tf.exp(-0.5 * tf.square((x - mean) / std)) / (std * tf.sqrt(2.0 * np.pi))
+        return result
+
+    def gaussian_mixture_probabilities(self, variables):
+        total = tf.zeros_like(self.observed_values)
+        gmm_i = 0
+        model_weights = variables[-1] / tf.reduce_sum(variables[-1])
+        for var in chunks(variables[:-1], 2):
+            loc, scale = var[0], var[1]
+            weight = model_weights[gmm_i]
+            addition = weight * self.__gaussian_pdf(self.observed_values, loc, scale)
+            total = total + addition
+
+            gmm_i += 1
+        return total
+
+    def feature_weight(self, xmi_probabilities_given_z, pseudocount=1e-8):
+        top = xmi_probabilities_given_z * self.prior * tf.math.log(
+            (xmi_probabilities_given_z / self.xmi_probabilities)+pseudocount)
+        feature_weight = tf.reduce_sum(top) / self.bottom_entropy
+        return feature_weight
+
+    def function_to_optimize(self, variables, pseudocount=1e-10):
+        # penalty = self.__constraint_penalties(variables)
+
+        probabilities = self.gaussian_mixture_probabilities(variables)
+        to_minimize = self.qs * tf.math.log(probabilities + pseudocount)  # 1D
+
+        feature_weight = self.feature_weight(probabilities)
+        to_minimize = - tf.reduce_sum(to_minimize * feature_weight)
+
+        return to_minimize
+
+    def optimize(self, ident, tolerance_thr=1e-3, log_check=100
+                 ):
+        """
+        Performs the optimization of the arbitrary function.
+        :param iterations: Number of iterations for the optimization process.
+        """
+        last_loss_seen = np.inf
+        for i in range(self.max_iter):
+            with tf.GradientTape() as tape:
+                # Record the operations for automatic differentiation
+                tape.watch(self.variables)
+                loss = self.function_to_optimize(self.variables)
+
+            # Compute gradients
+            gradients = tape.gradient(loss, self.variables)
+            self.optimizer.apply_gradients(zip(gradients, self.variables))
+
+            # Logging
+            if i % log_check == 0:
+                print(f"{ident}:\tOptimization iteration {i}, Loss: {loss.numpy()}")
+                if tf.abs(loss - last_loss_seen) < tolerance_thr:
+                    print(f"{ident} unchanged from last check, returning...")
+                    break
+                last_loss_seen = loss
+        return loss
+
+    def get_optimized_parameters(self):
+        """
+        Returns the optimized parameters.
+        """
+        best_params = self.variables
+        best_probas = self.gaussian_mixture_probabilities(best_params)
+        feature_weight = self.feature_weight(best_probas)
+
+        gmm_params = best_params[:-1]
+        gmm_weights = best_params[-1] / tf.reduce_sum(best_params[-1])
+        return gmm_params, gmm_weights, feature_weight.numpy()
+
+
+
+class WeightedGMMEnsemble(WeightedModelEnsemble):
+    def argmax_params(self, qs, observed_values, new_priors, gmm_only=True, random_init=True, no_tries=5,
+                      optimizer_max_iter=500, optimizer_tol=0.01, init_params_perturbation_proba=0.1,
+                      learning_rate=1, constraint_violation_penalty=10000
+                      ):
+        total_achieved_objective = 0
+        all_optimized_params = {}
+        for z in range(len(qs)):
+            all_optimized_params[z] = []
+            for m in range(observed_values.shape[1]):
+                optimizer = MStepGMMOptimizerSingleM(
+                    observed_values=observed_values[:, m],
+                    qs_z=qs[z],
+                    new_z_prior=new_priors[z],
+                    learning_rate=learning_rate,
+                    penalty_factor=constraint_violation_penalty,
+                    no_gmm_models=len(self.get_models()[z].parameters[m]) // 3,
+                    max_iter = optimizer_max_iter
+                )
+                best_achieved_fun_value = optimizer.optimize(f"{self.ident}-{z}-{m}")
+                optimized_params, optimized_model_weights, optimized_weights = optimizer.get_optimized_parameters()
+                params_to_send = []
+                for w, gm_params in zip(optimized_model_weights, chunks(optimized_params, 2)):
+                    loc, scale = gm_params
+                    params_to_send.extend([loc.numpy()[0], scale.numpy()[0], w.numpy()])
+                all_optimized_params[z].append(params_to_send)
+                total_achieved_objective += best_achieved_fun_value.numpy()
+
+        return all_optimized_params, total_achieved_objective
+
 
 
 def numerical_argmax_func(observed_vector, model_qs, probafunc, param_bounds):
@@ -742,7 +924,8 @@ class EMOptimizer:
         self.z = possible_latent
         # self.models = models  # dictionary z: model[z]
         if m_step_implementation == 'weighted':
-            self.models = WeightedModelEnsemble(models, batch_identificator)
+            # self.models = WeightedModelEnsemble(models, batch_identificator)
+            self.models = WeightedGMMEnsemble(models, batch_identificator)
         elif m_step_implementation == 'simple':
             self.models = ProbabilityModelEnsemble(models)
         # elif m_step_implementation == 'gmm_weighted':
@@ -898,4 +1081,4 @@ class EMOptimizer:
                 self.__record(new_parameters, colector=parameter_colector)
                 old_parameters = new_parameters
 
-        return self.models.get_models()  # recorded_parameters
+        return self.models  # .get_models()  # recorded_parameters

@@ -85,10 +85,11 @@ def apply_uniform_proba(val, params):
     return 1 / params[0]
 
 
-no_models = 5
-def apply_gmm_proba(val, params, no_models=no_models):
+
+def apply_gmm_proba(val, params):
     total_proba = 0
     params_counter = 0
+    no_models = len(params) // 3
     for i in range(no_models):
         loc, scale, weight = params[params_counter], params[params_counter + 1], params[params_counter + 2]
         total_proba += weight*stats.norm.pdf(val, loc, scale)
@@ -112,8 +113,9 @@ distributions = {
     ),
     "univariate_gmm": dict(
         proba=apply_gmm_proba,
-        bounds=list(chain.from_iterable(([-1e3, 1e8], [1e-3, 1e5], [1e-3, 1-1e-3]) for _ in range(no_models)))
-                                                # loc, scale, weight
+        bounds=None
+    #     bounds=list(chain.from_iterable(([-1e3, 1e8], [1e-3, 1e5], [1e-3, 1-1e-3]) for _ in range(no_models)))
+    #                                            # loc, scale, weight
     )
 }
 
@@ -157,7 +159,7 @@ class Metric:
 
 
 class LCSmetric(Metric):
-    def __init__(self):
+    def __init__(self, no_models):
         super().__init__("LCS",
                          "similarity",
                          "Size of the longest common substring shared between two kmers")
@@ -186,7 +188,7 @@ class LCSmetric(Metric):
 
 
 class PairContent(Metric):
-    def __init__(self):
+    def __init__(self, no_models):
         super().__init__("pair",
                          "distance",
                          "Difference in dinucleotide pair content")
@@ -227,7 +229,7 @@ class PairContent(Metric):
 
 
 class GCcontent(Metric):
-    def __init__(self):
+    def __init__(self, no_models):
         super().__init__("gc",
                          "distance",
                          "Difference in GC content")
@@ -263,7 +265,7 @@ class GCcontent(Metric):
 
 
 class ShapeMetric(Metric):
-    def __init__(self, shape_parameter):
+    def __init__(self, shape_parameter, no_models):
         super().__init__("shape",
                          "distance",
                          "MSE of chosen shape params")
@@ -374,7 +376,7 @@ class PFMmetric(Metric):
 
 
 class HocomocoIOU(PFMmetric):
-    def __init__(self, binding_matrix_file, binder_threshold, bg_kmers=None, selected_motifs=None):
+    def __init__(self, binding_matrix_file, binder_threshold, no_models, bg_kmers=None, selected_motifs=None):
         super().__init__(
             "hocomoco_iou",
             "similarity",
@@ -418,7 +420,7 @@ class HocomocoIOU(PFMmetric):
 
 
 class HocomocoMSE(PFMmetric):
-    def __init__(self, binding_matrix_file,  # binder_threshold,
+    def __init__(self, binding_matrix_file,  no_models,  # binder_threshold,
                  bg_kmers=None, selected_motifs=None):
         super().__init__(
             "hocomoco_mse",
@@ -509,7 +511,7 @@ class ProBoundMetric(Metric):
 
 
 class ProBoundHumanMSE(ProBoundMetric):
-    def __init__(self, bg_kmers=None, selected_motifs=None,
+    def __init__(self, no_models, bg_kmers=None, selected_motifs=None,
                  ):
         super().__init__(
             "probound_mse",

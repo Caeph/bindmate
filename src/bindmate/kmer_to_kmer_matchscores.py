@@ -155,13 +155,13 @@ def __optimize_arbitrary_no_weighted_models_bootstrap_points_and_metrics(no_matc
     for ident, item in enumerate(trained_models):
         print(f"{ident}: Calculating final probability")
         trained_model, chosen_features, matched_models_z = item
-        probas_0 = trained_model[0].calculate_probability(all_ranks[:, chosen_features])
+        probas_0 = trained_model.calculate_probability(0, all_ranks[:, chosen_features])
         mismatch_proba = probas_0
 
         # this is a logical or
         match_proba = np.zeros_like(probas_0)
         for z in matched_models_z:
-            match_proba = trained_model[z].calculate_probability(all_ranks[:, chosen_features]) + match_proba
+            match_proba = trained_model.calculate_probability(z, all_ranks[:, chosen_features]) + match_proba
 
         mean_mismatch_proba = mean_mismatch_proba + mismatch_proba
         mean_match_proba = mean_match_proba + match_proba
@@ -258,14 +258,15 @@ def __optimize_arbitrary_no_models_inner(no_matched_models, matched_models_z, al
             print('unmatched_params,matched_params,prior_0,prior_1', file=writer)
             models = em_algo.optimize(all_ranks, max_step, tolerance, parameter_colector=writer)
     print("Calculating final probability")
-
-    probas_0 = models[0].calculate_probability(all_ranks)
+# TODO get the ensemble to calculate probability - this does not include the feature weights
+    # probas_0 = models[0].calculate_probability(all_ranks)
+    probas_0 = models.calculate_probability(0, all_ranks)
     mismatch_proba = probas_0
 
     # this is a logical or
     match_proba = np.zeros_like(probas_0)
     for z in matched_models_z:
-        match_proba = models[z].calculate_probability(all_ranks) + match_proba
+        match_proba = models.calculate_probability(z, all_ranks) + match_proba
         # match_proba = np.fmax(models[z].calculate_probability(all_ranks), match_proba)
 
     return mismatch_proba, match_proba
@@ -313,8 +314,8 @@ def __optimize_two_models(all_ranks, full_metrics, priors=None, max_step=10, tol
             print('unmatched_params,matched_params,prior_0,prior_1', file=writer)
             models = em_algo.optimize(all_ranks, max_step, tolerance, parameter_colector=writer)
     print("Calculating final probability")
-    probas_0 = models[0].calculate_probability(all_ranks)
-    probas_1 = models[1].calculate_probability(all_ranks)
+    probas_0 = models.calculate_probability(0,all_ranks)
+    probas_1 = models.calculate_probability(1,all_ranks)
 
     return probas_0, probas_1
 
@@ -332,15 +333,17 @@ def __preselect(full_probas_0, full_probas_1, part, kmer_combinations):
     if part >= 1:
         return np.arange(0, len(full_probas_0))
 
-    without_symmetry = kmer_combinations[:, 0] > kmer_combinations[:, 1]
+    without_symmetry = kmer_combinations[:, 0] >= kmer_combinations[:, 1]
 
     probas_0 = full_probas_0[without_symmetry]
     probas_1 = full_probas_1[without_symmetry]
     no = int(part * len(probas_0))
     one_thr = probas_1[np.argsort(-probas_1)[no]]
-    zero_thr = probas_0[np.argsort(probas_0)[no]]
+    # zero_thr = probas_0[np.argsort(probas_0)[no]]
 
-    return np.where((full_probas_1 >= one_thr) & (full_probas_0 <= zero_thr))[0]
+    chosen = np.where((full_probas_1 >= one_thr))[0]
+
+    return chosen
 
 
 class PairingResults:
@@ -432,7 +435,7 @@ def __calculate_kmer_to_kmer_matchscores_multimodel(no_matched_models, unique_km
     start = time.time()
 
     bs_size = int(np.fmax(len(kmer_combinations) * bootstrap_p, min_size_to_bootstrap))
-    print(f"Bootstrapping size was set as {bs_size} data points")
+    print(f"Bootstrapping size was set as {bs_size} data points from {len(kmer_combinations)} possible")
     # mismatch_proba, match_proba = __optimize_arbitrary_no_weighted_models_bootstrap(no_matched_models, pairwise_ranks,
     #                                                                                 full_metrics,
     #                                                                                 max_step=max_em_step,
@@ -508,13 +511,13 @@ def calculate_kmer_to_kmer_matchscores(inputdf, k, metrics, background_info,
                                        threads=-1, max_em_step=20, no_matched_models=None,
                                        save_results='../../test_results_match_probabilities/test_store.csv',
                                        preselection_part=0.5, em_params_file=None,
-                                       bootstrap_no=3, feature_size=6):
+                                       bootstrap_no=3, feature_size=6, no_gmm_models=5):
     # curate the metrics
     if threads == -1:
         threads = cpu_count()
 
     predefined_functions = initialize_available_functions(
-        k, use_motifs_individually, *background_info
+        k, use_motifs_individually, no_gmm_models, *background_info
     )
 
     # read input kmers
