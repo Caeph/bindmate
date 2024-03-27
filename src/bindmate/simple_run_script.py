@@ -39,11 +39,12 @@ if __name__ == '__main__':
                                         background_type="sampled",
                                         background_size=1500,
                                         max_em_step=50,
+                                        threads=1,
+                                        no_gmm_models=3,
                                         preselection_part=0.2,
                                         no_matched_models=2,
                                         bootstrap_no=20,
                                         feature_size=10,
                                         background_source_file=os.path.join(script_dir, 'backgrounds/upstream2000.fa'),
-
                                         )
     similarities = tool.fit_predict_fasta(input_path)  # seq to seq

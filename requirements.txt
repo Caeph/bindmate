@@ -11,3 +11,4 @@ seaborn~=0.13.1
 matplotlib~=3.8.2
 rpy2~=3.5.15
 tensorflow~=2.16.1
+biopython
