@@ -669,8 +669,8 @@ def strictly_between_one_and_zero_and_norm_to_one(x):
 
 class MStepGMMOptimizerSingleM:
     # both m and z is given
-    def __init__(self, observed_values, qs_z, new_z_prior, no_gmm_models, learning_rate=0.1,
-                 penalty_factor=10000, max_iter=1000):
+
+    def initialize_params(self, no_gmm_models, observed_values):
         variables = []
         for i in range(no_gmm_models):
             # set up a gmm parameters model
@@ -697,6 +697,11 @@ class MStepGMMOptimizerSingleM:
                 constraint=strictly_between_one_and_zero_and_norm_to_one
             )
         )
+        return variables
+
+    def __init__(self, observed_values, qs_z, new_z_prior, no_gmm_models, learning_rate=0.1,
+                 penalty_factor=10000, max_iter=1000):
+        variables = self.initialize_params(no_gmm_models, observed_values)
         self.variables = variables
 
         # Transform a np 1d matrix to tensor, constant
@@ -792,6 +797,10 @@ class MStepGMMOptimizerSingleM:
                 tape.watch(self.variables)
                 loss = self.function_to_optimize(self.variables)
 
+            if tf.math.is_nan(loss):
+                print(f"{ident}:\tloss is nan, trying a different init")
+                self.variables = self.initialize_params(len(self.variables) // 3, self.observed_values)
+
             # Compute gradients
             gradients = tape.gradient(loss, self.variables)
             self.optimizer.apply_gradients(zip(gradients, self.variables))
@@ -800,7 +809,7 @@ class MStepGMMOptimizerSingleM:
             if i % log_check == 0:
                 print(f"{ident}:\tOptimization iteration {i}, Loss: {loss.numpy()}")
                 if tf.abs(loss - last_loss_seen) < tolerance_thr:
-                    print(f"{ident} unchanged from last check, returning...")
+                    print(f"{ident}\tunchanged from last check, returning...")
                     break
                 last_loss_seen = loss
         return loss
@@ -1057,8 +1066,8 @@ class EMOptimizer:
                     print(f"{identificator}\tprior({z}): {self.priors[z]} --> {new_priors[z]}\t")
                 for z in self.z:
                     old_params = self.models.get_models()[z].parameters
-                    for m, old_m_params in enumerate(old_params):
-                        o = ', '.join(["%.2f" % x for x in old_m_params])
+                    for m in range(observed_values.shape[1]):
+                        o = ', '.join(["%.2f" % x for x in old_params[m]])
                         n = ', '.join(["%.2f" % x for x in new_theta[z][m]])
                         print(f"{identificator}\ttheta(z={z}, m={m}): {o} --> {n}\t")
 

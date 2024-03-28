@@ -1,0 +1,13 @@
+*.fasta
+*.fa
+*.fai
+# test input
+*.log
+
+# stuff
+test_results_*
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+
+.ipynb_checkpoints/*
