@@ -521,6 +521,7 @@ class MStepGMMOptimizerSingleM:
             if tf.math.is_nan(loss):
                 print(f"{ident}:\tloss is nan, trying a different init")
                 self.variables = self.initialize_params(len(self.variables) // 3, self.observed_values)
+                continue
 
             # Compute gradients
             gradients = tape.gradient(loss, self.variables)
