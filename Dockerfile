@@ -59,7 +59,7 @@ RUN R -e "install.packages('BiocManager', repos='http://cran.us.r-project.org')"
 RUN R -e "BiocManager::install('DNAshapeR')"
 
 # for testing
-COPY small_unbalanced_test_dataset_randombg.fasta test.fasta
+# COPY small_unbalanced_test_dataset_randombg.fasta test.fasta
 COPY src/bindmate bindmate
 # RUN /src/venv/bin/python bindmate/install_dnashape.py
 

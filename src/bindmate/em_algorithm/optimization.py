@@ -24,7 +24,7 @@ def strictly_positive_constraint(x):
 def strictly_between_one_and_zero(x):
     min_value = 1e-6  # Example: One millionth
     val = tf.maximum(x, min_value)
-    val = tf.minimum(val, 1-min_value)
+    val = tf.minimum(val, 1 - min_value)
     return val
 
 
@@ -108,9 +108,6 @@ class MStepGMMOptimizer:
 
     def __init__(self, initial_parameter_values, observed_values, qs, new_priors, learning_rate=0.2,
                  penalty_factor=10000):
-        # initial parameter values is a 2d dict of list of triples (loc, scale, weight) for each m and z
-        # self.variables = [tf.Variable([gmm_theta[0], gmm_theta[1], gmm_theta[2]],
-        #                               dtype=tf.float32) for gmm_theta in initial_parameter_values]
         self.variables = {}
 
         self.zs = []
@@ -153,7 +150,6 @@ class MStepGMMOptimizer:
         # shape: (no_examples, no_metrics)
         self.observed_values = tf.constant(observed_values, dtype=tf.float32)
 
-
         # Transform a dict [0..len(qs)] -> np array to a tensor matrix, constant
         # shape: (no_examples, no_z)
         self.qs = tf.constant(np.array([qs[z] for z in sorted(qs.keys())]), dtype=tf.float32)
@@ -177,11 +173,6 @@ class MStepGMMOptimizer:
     def function_to_optimize(self, variables, pseudocount=1e-10):
         penalty = self.__constraint_penalties(variables)
 
-        # Loss function calculation:
-        # sum_z sum_m sum_i=1^n qs[z]_i . w(m,z) . log Pr[x_i^m | z],
-        # where Pr[x_i^m | z] follows a Gaussian mixture model
-        # shape of probabilities -- (z,m,no_points)
-
         probabilities = tf.stack([self.gaussian_mixture_probabilities_z(variables, z) for z in self.zs])
         probabilities = tf.transpose(probabilities, perm=[1, 0, 2])
         # if tf.reduce_any(tf.math.is_nan(probabilities)):
@@ -201,7 +192,7 @@ class MStepGMMOptimizer:
 
         return original_loss + penalty
 
-    def optimize(self, ident, iterations=1000, # tol=0.1, staying_thr=50
+    def optimize(self, ident, iterations=1000,  # tol=0.1, staying_thr=50
                  ):
         """
         Performs the optimization of the arbitrary function.
@@ -326,8 +317,6 @@ class ProbabilityModelEnsemble:
         self.models[z].set_parameters(parameters)
 
 
-
-
 class WeightedModelEnsemble(ProbabilityModelEnsemble):
     # KL divergence as the weight - no new parameters
 
@@ -371,7 +360,7 @@ class WeightedModelEnsemble(ProbabilityModelEnsemble):
         for z in range(len(self.models)):
             init_params[z] = {}
             for m in range(observed_values.shape[1]):
-                perturb = np.random.uniform(0,1)
+                perturb = np.random.uniform(0, 1)
                 if perturb <= init_params_perturbation_proba:
                     init_params[z][m] = list(chunks(self.models[z].parameters[m], 3))
                 else:
@@ -380,11 +369,11 @@ class WeightedModelEnsemble(ProbabilityModelEnsemble):
                     n = len(random_subset_indices)
                     chosen = observed_values[random_subset_indices, m]
                     loc_estim = np.mean(chosen)
-                    scale_estim = np.sqrt(np.sum((chosen - loc_estim)**2) / (n-1))
+                    scale_estim = np.sqrt(np.sum((chosen - loc_estim) ** 2) / (n - 1))
                     init_params[z][m] = [[
                         np.quantile(chosen, i / (len(self.models[z].parameters[m]) // 3)),
-                        scale_estim + np.random.normal(loc=0, scale=scale_estim/2),
-                        np.random.uniform(0,1)
+                        scale_estim + np.random.normal(loc=0, scale=scale_estim / 2),
+                        np.random.uniform(0, 1)
                     ] for i, _ in enumerate(chunks(self.models[z].parameters[m], 3))]
 
         optimizer = MStepGMMOptimizer(
@@ -402,267 +391,14 @@ class WeightedModelEnsemble(ProbabilityModelEnsemble):
         for z in range(len(self.models)):
             new_weights[z] = {}
             for m in range(observed_values.shape[1]):
-                new_weights[z][m] = optimized_weights[m,z]
+                new_weights[z][m] = optimized_weights[m, z]
 
         return optimized_params, best_achieved_fun_value
-
-        # def all_probas_for_m(params, m, pseudocount=1e-10):
-        #     # xmi calculation
-        #     m = int(m)
-        #     x = pd.Series(observed_values[:, m])
-        #     p_xmi = np.zeros((len(new_priors), len(observed_values)))
-        #     for z in self.models.keys():
-        #         model = self.models[z]
-        #         param = params[z]  # [m]
-        #         p_func = model.optimization_info[m]['proba']
-        #         p_xmi[z, :] += x.swifter.progress_bar(False).apply(lambda xi: p_func(xi, param) + pseudocount)
-        #     return p_xmi
-        #
-        # def KL_divergence_weight(z, p_xmi, pseudocount=1e-9):
-        #     p_xi = np.sum(p_xmi[:, :], axis=0) + pseudocount
-        #     p_xi_given_mz = p_xmi[z, :]
-        #
-        #     w_avg = np.sum((p_xi_given_mz * new_priors[z]) * np.log(
-        #         (p_xi_given_mz / (p_xi + pseudocount))
-        #     ))
-        #     bottom_entropy = np.sum(p_xi * np.log(p_xi)) + pseudocount
-        #
-        #     return w_avg / bottom_entropy
-        #
-        # def calculate_weights_given_m(p_xmi, minimal_weight=None):
-        #     weights = {}
-        #     for z in self.models.keys():
-        #         for m in self.weights[z].keys():
-        #             weight_mz = KL_divergence_weight(z, p_xmi)
-        #             weights[z] = weight_mz
-        #
-        #     # normalize weights
-        #     Z = np.sum([weights[z] for z in self.models.keys()])
-        #     no_z = len(self.models.keys())
-        #     # no_m = observed_values.shape[1]
-        #     # Z = (Z / (no_z * no_m))
-        #     Z = (Z / no_z)
-        #     for z in self.models.keys():
-        #         weights[z] = weights[z] / Z
-        #         if minimal_weight is not None:
-        #             weights[z] = np.fmax(weights[z], minimal_weight)
-        #     return weights
-        #
-        # def objective_for_m(params, pseudocount=1e-6):
-        #     # read params
-        #     m = params[0]
-        #     if m >= observed_values.shape[1]:
-        #         return np.inf
-        #     params = flat_array_to_m_params_dict(params[1:])
-        #
-        #     p_xmi = all_probas_for_m(params, m)
-        #     weights = calculate_weights_given_m(p_xmi)
-        #
-        #     # do calculation
-        #     result = 0
-        #     for z in self.models.keys():
-        #         p = p_xmi[z, :]
-        #         weight_mz = weights[z]
-        #         current_res = weight_mz * np.sum(np.log(p + pseudocount) * qs[z])
-        #         result = result + current_res
-        #
-        #     if np.isnan(result):
-        #         return np.inf
-        #
-        #     return - result
-        #
-        # total_objective_values = 0
-        # best_params = {z: [] for z in range(len(self.models))}
-        #
-        # new_weights = {z: dict() for z in range(len(self.models))}
-        # for m in range(observed_values.shape[1]):
-        #     # get params
-        #     init_params = [m]
-        #     about_params = []
-        #     param_bounds = [[m, m]]
-        #
-        #     for z in range(len(self.models)):
-        #         init_params.extend(self.models[z].parameters[m])
-        #         param_bounds.extend([check_bounds(bounds, observed_values[:, m]) for bounds in
-        #                              self.models[z].optimization_info[m]['params_bounds']])
-        #         about_params.append(len(self.models[z].parameters[m]))
-        #
-        #     def flat_array_to_m_params_dict(params_vector):
-        #         index = 0
-        #         params = {}
-        #         about_i = 0
-        #         for z in range(len(self.models)):
-        #             l = about_params[about_i]
-        #             params[z] = params_vector[index:index + l]
-        #             about_i += 1
-        #             index += l
-        #         return params
-        #
-        #     # optimize objective
-        #     objective_for_m(init_params)
-        #     init_params = np.array(init_params)
-        #
-        #     def chunks(lst, n):
-        #         """Yield successive n-sized chunks from lst."""
-        #         for i in range(0, len(lst), n):
-        #             yield lst[i:i + n]
-        #
-        #     if gmm_only:
-        #         # def weight_sum_to_one(params, z):
-        #         #     params = flat_array_to_m_params_dict(params[1:])[z]
-        #         #     w_sum = np.sum([params[i*3+2] for i in range(len(params) // 3)])
-        #         #     return 1 - w_sum
-        #         #
-        #         # constraints = ({"type": 'ineq',
-        #         #                 'fun': lambda params: weight_sum_to_one(params, z)} for z in range(len(self.models)))
-        #         #
-        #         # def all_z_weights_sum(params):
-        #         #     return np.array([weight_sum_to_one(params, z) for z in range(len(self.models))])
-        #         weight_params = [i*3 for i in range(1, (len(init_params) // 3)+1)]
-        #         no_models = len(weight_params) / len(self.models)
-        #         weight_indices = [wi_array for wi_array in chunks(weight_params, int(no_models))]
-        #
-        #         start = time.time()
-        #
-        #         A = []
-        #         for wa in weight_indices:
-        #             arr = np.zeros_like(init_params)
-        #             for i in wa:
-        #                 arr[i] = 1
-        #             A.append(arr)
-        #
-        #         A = np.stack(A)
-        #         lb = np.ones(len(self.models)) - 0.05
-        #         ub = np.ones(len(self.models))
-        #         constraints = optimize.LinearConstraint(A, lb, ub)
-        #
-        #         minimizers = []
-        #         minimizing = optimize.minimize(
-        #             objective_for_m,
-        #             init_params,
-        #             bounds=param_bounds,
-        #             constraints=constraints,
-        #             method='COBYLA', options={'tol': optimizer_tol,
-        #                                       'maxiter': optimizer_max_iter,
-        #                                       "time_limit": optimizer_time_limit})
-        #         minimizers.append(minimizing)
-        #
-        #         for i_trial in range(no_tries):
-        #             ith_init_params = []
-        #             for lower, upper in param_bounds:
-        #                 ith_init_params.append(np.random.uniform(lower, upper))
-        #
-        #             ith_init_params = np.array(ith_init_params)
-        #             minimizing = optimize.minimize(
-        #                 objective_for_m,
-        #                 ith_init_params,
-        #                 bounds=param_bounds,
-        #                 constraints=constraints,
-        #                 method='COBYLA', options={'tol': optimizer_tol,
-        #                                           'maxiter': optimizer_max_iter,
-        #                                           "time_limit": optimizer_time_limit})
-        #             minimizers.append(minimizing)
-        #
-        #         print(f"Time spent in minimizing: {time.time() - start}")
-        #
-        #         valid = [m.fun for m in minimizers if m.success]
-        #         if len(valid) > 0:
-        #             chosen = np.argmin(valid)
-        #         else:
-        #             chosen = np.argmin([m.fun for m in minimizers])
-        #         minimizing = minimizers[chosen]
-        #     else:
-        #         minimizing = optimize.minimize(objective_for_m,
-        #                                        init_params,
-        #                                        bounds=param_bounds,
-        #                                        method='SLSQP')
-        #
-        #     total_objective_values = total_objective_values + minimizing.fun
-        #     m_best_params_dict = flat_array_to_m_params_dict(minimizing.x[1:])  # first parameter is m
-        #
-        #     # parameters checkup - weights are within bounds, ...
-        #     # sort params
-        #
-        #     for z in m_best_params_dict.keys():
-        #         checked_params = []
-        #         locs = []
-        #         sum_of_weights = sum([weight if weight > 0 else 1e-6 for _, _, weight in
-        #                               chunks(m_best_params_dict[z], 3)])
-        #
-        #         for loc, scale, weight in chunks(m_best_params_dict[z], 3):
-        #             if weight < 0:
-        #                 weight = 1e-6
-        #
-        #             checked_params.append([loc, scale, weight / sum_of_weights])
-        #             locs.append(loc)
-        #         checked_params = np.array(checked_params)[np.argsort(locs)]
-        #         m_best_params_dict[z] = [y for x in checked_params for y in x]  # flattened
-        #     #
-        #
-        #     best_p_xmi = all_probas_for_m(m_best_params_dict, m)
-        #     best_weights_m = calculate_weights_given_m(best_p_xmi, minimal_weight=1e-6)
-        #     for z in range(len(self.models)):
-        #         best_params[z].append(m_best_params_dict[z])
-        #         new_weights[z][m] = best_weights_m[z]
-        #
-        # self.weights = new_weights
-        # return best_params, total_objective_values
-
-        # init_params = []
-        # about_params = []
-        # param_bounds = []
-        # for m in range(observed_values.shape[1]):
-        #     for z in range(len(self.models)):
-        #         init_params = []
-        #         about_params = []
-        #         param_bounds = []
-        #         #
-        #         if init_guess == 'previous':
-        #             init_params.extend(self.models[z].parameters[m])
-        #         elif init_guess == 'random':
-        #             init_params.extend(self.models[z].parameters[m])
-        #         else:
-        #             raise NotImplementedError("Unknown method of getting initial guess.")
-        #         param_bounds.extend([check_bounds(bounds, observed_values[:, m]) for bounds in self.models[z].optimization_info[m]['params_bounds']])
-        #         about_params.append(len(self.models[z].parameters[m]))
-
-        # def flat_array_to_params_dict(params_vector):
-        #     index = 0
-        #     params = {}
-        #     about_i = 0
-        #     for z in range(len(self.models)):
-        #         params[z] = []
-        #         for m in range(observed_values.shape[1]):
-        #             l = about_params[about_i]
-        #             params[z].append(params_vector[index:index+l])
-        #             about_i += 1
-        #             index += l
-        #     return params
-        #
-        # # numerically minimize objective function
-        #
-        #
-        # # TODO this might need speeding up
-        # minimizing = optimize.minimize(full_objective, np.array(init_params), bounds=param_bounds, method='SLSQP'
-        #                                )
-        # print(minimizing.message)
-        # # minimizing = optimize.dual_annealing(full_objective, bounds=param_bounds)
-        # best_params = flat_array_to_params_dict(minimizing.x)
-        #
-        # best_p_xmi = all_probas(best_params)
-        # self.weights = calculate_weights(best_p_xmi, minimal_weight=1e-6)
-        # # print(f"Achieved best weights: {self.weights}")
-        #
-        # return best_params, minimizing.fun
-
 
 
 def strictly_between_one_and_zero_and_norm_to_one(x):
     min_value = 1e-6  # Example: One millionth
     val = tf.maximum(x, min_value)
-    # val = tf.minimum(val, 1 - min_value)
-    # total = tf.reduce_sum(val)
-    # val = val / total
 
     return val
 
@@ -729,25 +465,10 @@ class MStepGMMOptimizerSingleM:
             decay_steps=max_iter,
             decay_rate=0.95
         )
-        self.max_iter=max_iter
+        self.max_iter = max_iter
 
         # Create an optimizer with the learning rate schedule
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
-
-    # def __constraint_penalties(self, variables):
-    #     penalty = 0
-    #     weights = tf.stack([var for i, var in enumerate(variables) if i % 3 == 2])
-    #     weight_constraint = tf.reduce_sum(weights) - 1.0  # Constraint: sum of weights - 1 should be 0
-    #
-    #     # Apply a penalty for violating the weight constraint
-    #     penalty += self.penalty_factor * tf.square(
-    #         weight_constraint)
-    #
-    #     positivity_constraint = tf.reduce_sum(tf.nn.relu(-weights))
-    #     penalty += self.penalty_factor * tf.square(
-    #         positivity_constraint)
-    #
-    #     return penalty
 
     def __gaussian_pdf(self, x, mean, std):
         """Calculate the Gaussian probability density function."""
@@ -769,7 +490,7 @@ class MStepGMMOptimizerSingleM:
 
     def feature_weight(self, xmi_probabilities_given_z, pseudocount=1e-8):
         top = xmi_probabilities_given_z * self.prior * tf.math.log(
-            (xmi_probabilities_given_z / self.xmi_probabilities)+pseudocount)
+            (xmi_probabilities_given_z / self.xmi_probabilities) + pseudocount)
         feature_weight = tf.reduce_sum(top) / self.bottom_entropy
         return feature_weight
 
@@ -827,7 +548,6 @@ class MStepGMMOptimizerSingleM:
         return gmm_params, gmm_weights, feature_weight.numpy()
 
 
-
 class WeightedGMMEnsemble(WeightedModelEnsemble):
     def argmax_params(self, qs, observed_values, new_priors, gmm_only=True, random_init=True, no_tries=5,
                       optimizer_max_iter=500, optimizer_tol=0.01, init_params_perturbation_proba=0.1,
@@ -845,7 +565,7 @@ class WeightedGMMEnsemble(WeightedModelEnsemble):
                     learning_rate=learning_rate,
                     penalty_factor=constraint_violation_penalty,
                     no_gmm_models=len(self.get_models()[z].parameters[m]) // 3,
-                    max_iter = optimizer_max_iter
+                    max_iter=optimizer_max_iter
                 )
                 best_achieved_fun_value = optimizer.optimize(f"{self.ident}-{z}-{m}")
                 optimized_params, optimized_model_weights, optimized_weights = optimizer.get_optimized_parameters()
@@ -857,7 +577,6 @@ class WeightedGMMEnsemble(WeightedModelEnsemble):
                 total_achieved_objective += best_achieved_fun_value.numpy()
 
         return all_optimized_params, total_achieved_objective
-
 
 
 def numerical_argmax_func(observed_vector, model_qs, probafunc, param_bounds):
