@@ -428,7 +428,7 @@ def __calculate_kmer_metrics(unique_kmers, full_metrics, cpus, save_results):
 def __calculate_kmer_to_kmer_matchscores_multimodel(no_matched_models, unique_kmers, kmers_mapped_to_sqs,
                                                     full_metrics, cpus, save_results, preselection_part,
                                                     max_em_step, em_params_file, min_size_to_bootstrap=int(5e2),
-                                                    bootstrap_p=0.1, feature_no=3, bootstrap_no=3):
+                                                    bootstrap_p=0.2, feature_no=3, bootstrap_no=3):
     pairwise_ranks, kmer_combinations = __calculate_kmer_metrics(unique_kmers, full_metrics, cpus, save_results)
 
     print(f"Starting optimization with {no_matched_models}...")
